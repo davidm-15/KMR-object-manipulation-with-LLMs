@@ -1,11 +1,12 @@
 # This repository is implementaion of diploma thesis Object Manipulation with Large language Models in Real Robots
 
 
-## Connecting to karolina
+## Setting up the server site
+As server I used karolina supercomputer but anythig else with suficient computing power is sufficient.
 
 I use port fowarding for interference between the robot and LLMa
 
-Foward to carolina 
+Foward to karolina 
 ```bash
 ssh -i SSH_KEY -L 5000:localhost:5000 USERNAME@karolina.it4i.cz
 ```
@@ -15,3 +16,10 @@ Connect to specific node
 ssh -L 5000:localhost:5000 NODE_NAME 
 ```
 
+The server side has to have the following structure
+
+```
+├────KMR-object-manipulation-with-LLMs
+└────LISA
+```
+[LISA](https://github.com/dvlab-research/LISA?tab=readme-ov-file#training-data-preparation)
