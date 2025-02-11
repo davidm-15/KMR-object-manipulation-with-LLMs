@@ -6,7 +6,9 @@
 !README.md
 
 # folders
-!/communication/
+!communication/
+communication/*
+communication/*/
 
 
 # Ignore all files named .DS_Store or ending with .log
