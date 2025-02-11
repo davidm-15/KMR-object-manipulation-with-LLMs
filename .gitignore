@@ -1,0 +1,14 @@
+# ignore everything
+/*
+
+# Readme
+!.gitignore
+!README.md
+
+# folders
+!/communication/
+
+
+# Ignore all files named .DS_Store or ending with .log
+**/.DS_Store
+**.log
