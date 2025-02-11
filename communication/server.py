@@ -5,7 +5,7 @@ from io import BytesIO
 import base64
 import torch
 import sys
-sys.path.append('../')
+sys.path.append('../../')
 from LISA import ProccesMany 
 
 app = Flask(__name__)
