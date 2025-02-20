@@ -7,9 +7,11 @@
 
 # folders
 !communication/
-communication/*
-communication/*/
+!communication/*
 
+# Ignore the images folder and its contents
+communication/images/
+communication/images/*
 
 # Ignore all files named .DS_Store or ending with .log
 **/.DS_Store

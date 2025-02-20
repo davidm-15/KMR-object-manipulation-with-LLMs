@@ -44,5 +44,6 @@ try:
             mask_image.save(output_mask_path)
             print(f"Predicted mask {i} saved as '{output_mask_path}'")
                   
+                
 except Exception as e:
     print(f"Failed to connect to the server: {e}")
