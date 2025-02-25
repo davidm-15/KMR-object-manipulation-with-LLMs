@@ -7,11 +7,18 @@
 
 # folders
 !communication/
-!communication/*
+communication/*
+!communication/*.py
 
-# Ignore the images folder and its contents
-communication/images/
-communication/images/*
+!RobotNavigation/
+RobotNavigation/*
+!RobotNavigation/*.py
+
+!ImageProcessing/
+ImageProcessing/*
+!ImageProcessing/*.py
+
+
 
 # Ignore all files named .DS_Store or ending with .log
 **/.DS_Store
