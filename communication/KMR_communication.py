@@ -15,6 +15,7 @@ def call_endpoint(endpoint, params=None):
         response = requests.get(url)
         if response.status_code == 200:
             print(f"Response from {endpoint}:", response.text)
+            return response.json()
         else:
             print(f"Failed to get a valid response from {endpoint}. Status Code:", response.status_code)
     except Exception as e:
@@ -29,6 +30,11 @@ def count_with_5_7():
     call_endpoint("Count", params)
 
 
+def get_pose():
+    call_endpoint("getPose")
+
+def capture_image():
+    call_endpoint("CaptureImage")
 
 def move_up():
     params = {"x": 0.1, "y": 0, "Theta": 0}
@@ -85,6 +91,14 @@ def main():
 
             case "d":
                 rotate_right()
+                time.sleep(0.2)
+
+            case "c":
+                capture_image()
+                time.sleep(0.2)
+
+            case "s":
+                get_pose()
                 time.sleep(0.2)
 
             case "esc":
