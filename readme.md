@@ -4,7 +4,7 @@
 ## Setting up the server site
 As server I used karolina supercomputer but anythig else with suficient computing power is sufficient.
 
-I use port fowarding for interference between the robot and LLMa
+I use port fowarding for interference between the robot and LLMs
 
 Foward to karolina 
 ```bash
@@ -19,7 +19,8 @@ ssh -L 5000:localhost:5000 NODE_NAME
 The server side has to have the following structure
 
 ```
-├────KMR-object-manipulation-with-LLMs
-└────LISA
+├────KMR-object-manipulation-with-LLMs (this project)
+└────[LISA](https://github.com/your-username/LISA)
 ```
+
 [LISA](https://github.com/dvlab-research/LISA?tab=readme-ov-file#training-data-preparation)
