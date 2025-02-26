@@ -6,14 +6,15 @@ import base64
 import torch
 import sys
 sys.path.append('../../')
-from LISA import ProccesMany 
+sys.path.append('../Inference/')
+import LISA_Inference
 
 app = Flask(__name__)
 
 # Load the model and other components when the server starts
 if __name__ == "__main__":
     args = []
-    model, tokenizer, clip_image_processor, transform, args = ProccesMany.StartModel(args)
+    model, tokenizer, clip_image_processor, transform, args = LISA_Inference.StartModel(args)
 
 @app.route("/process", methods=["POST"])
 def process_image():
@@ -24,14 +25,15 @@ def process_image():
     # Read the image
     image_file = request.files["image"]
     image = cv2.imdecode(np.frombuffer(image_file.read(), np.uint8), cv2.IMREAD_COLOR)
-    cv2.imwrite("received_image.jpg", image)
+    output_image_path = "images/received_image.jpg"
+    cv2.imwrite(output_image_path, image)
 
     # Read the prompt
     prompt = request.form["prompt"]
     print(f"Received prompt: {prompt}")
 
     # Process the image and prompt using your model
-    pred_masks, image_np = ProccesMany.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
+    pred_masks, image_np = LISA_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
 
     # Convert the processed image to a byte stream
     def encode_image(image):
