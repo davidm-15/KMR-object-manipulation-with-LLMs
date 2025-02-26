@@ -33,7 +33,7 @@ try:
         processed_image = Image.open(io.BytesIO(processed_image_bytes))
         output_image_path = "images/processed_image.jpg"
         processed_image.save(output_image_path)
-        print("Processed image saved as 'images/processed_image.jpg'")
+        print(f"Processed image saved as {output_image_path}")
 
         # Decode and save the predicted masks
         masks_base64 = response_data["pred_masks"]
