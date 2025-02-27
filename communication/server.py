@@ -3,7 +3,7 @@ import os
 
 sys.path.append('../Inference/')
 import LISA_Inference
-import glamm_Inference
+# import glamm_Inference
 
 from flask import Flask, request, jsonify
 import cv2
@@ -14,15 +14,21 @@ import torch
 app = Flask(__name__)
 
 # Choose inference type based on environment variable (LISA or GLAMM)
-INFERENCE_TYPE = os.getenv("INFERENCE_TYPE", "GLAMM")  # Default to LISA
+INFERENCE_TYPE = os.getenv("INFERENCE_TYPE", "LISA")  # Default to LISA
 
 # Load only the selected model
 if INFERENCE_TYPE == "GLAMM":
     args = []
-    model, tokenizer, clip_image_processor, transform, args = glamm_Inference.StartModel()
+    # model, tokenizer, clip_image_processor, transform, args = glamm_Inference.StartModel()
 else:
     args = []
     model, tokenizer, clip_image_processor, transform, args = LISA_Inference.StartModel(args)
+
+
+def encode_image(image):
+    _, img_encoded = cv2.imencode(".jpg", image)
+    return base64.b64encode(img_encoded.tobytes()).decode("utf-8")
+
 
 @app.route("/process", methods=["POST"])
 def process_image():
@@ -42,14 +48,32 @@ def process_image():
 
     # Process using the selected model
     if INFERENCE_TYPE == "GLAMM":
-        pred_masks, image_np = glamm_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
+        # pred_masks, image_np = glamm_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
+        """s"""
     else:
         pred_masks, image_np = LISA_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
 
+
+    bounding_boxes = []
+
+    for i, pred_mask in enumerate(pred_masks):
+        if pred_mask.shape[0] == 0:
+            continue
+
+        pred_mask = pred_mask.detach().cpu().numpy()[0]
+        pred_mask = pred_mask > 0
+
+        # Find contours of the mask
+        contours, _ = cv2.findContours(pred_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            x, y, w, h = cv2.boundingRect(contour)
+            bounding_boxes.append([x, y, x + w, y + h])
+
+    # Print the bounding boxes
+    print("Bounding boxes:", bounding_boxes)
+
+
     # Convert the processed image to a byte stream
-    def encode_image(image):
-        _, img_encoded = cv2.imencode(".jpg", image)
-        return base64.b64encode(img_encoded.tobytes()).decode("utf-8")
 
     processed_image_base64 = encode_image(image_np)
 
