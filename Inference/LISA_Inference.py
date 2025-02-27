@@ -1,10 +1,7 @@
 import sys
-sys.path.append('../')
 sys.path.append('../../LISA')
-sys.path.append('./')
-
 import chat
-from chat import *
+
 import argparse
 import os
 
@@ -87,7 +84,7 @@ def main(args):
 
 def StartModel(args):
 
-    args = parse_args(args)
+    args = chat.parse_args(args)
     os.makedirs(args.vis_save_path, exist_ok=True)
     # Create model
     tokenizer = AutoTokenizer.from_pretrained(
@@ -212,7 +209,7 @@ def ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, 
     resize_list = [image.shape[:2]]
 
     image = (
-        preprocess(torch.from_numpy(image).permute(2, 0, 1).contiguous())
+        chat.preprocess(torch.from_numpy(image).permute(2, 0, 1).contiguous())
         .unsqueeze(0)
         .cuda()
     )
@@ -246,7 +243,8 @@ def ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, 
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    args = sys.argv[1:]
+    main(args)  
     
         
 

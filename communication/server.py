@@ -1,18 +1,26 @@
+import sys
+import os
+
+sys.path.append('../Inference/')
+import LISA_Inference
+import glamm_Inference
+
 from flask import Flask, request, jsonify
 import cv2
 import numpy as np
-from io import BytesIO
 import base64
 import torch
-import sys
-sys.path.append('../../')
-sys.path.append('../Inference/')
-import LISA_Inference
 
 app = Flask(__name__)
 
-# Load the model and other components when the server starts
-if __name__ == "__main__":
+# Choose inference type based on environment variable (LISA or GLAMM)
+INFERENCE_TYPE = os.getenv("INFERENCE_TYPE", "GLAMM")  # Default to LISA
+
+# Load only the selected model
+if INFERENCE_TYPE == "GLAMM":
+    args = []
+    model, tokenizer, clip_image_processor, transform, args = glamm_Inference.StartModel()
+else:
     args = []
     model, tokenizer, clip_image_processor, transform, args = LISA_Inference.StartModel(args)
 
@@ -32,8 +40,11 @@ def process_image():
     prompt = request.form["prompt"]
     print(f"Received prompt: {prompt}")
 
-    # Process the image and prompt using your model
-    pred_masks, image_np = LISA_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
+    # Process using the selected model
+    if INFERENCE_TYPE == "GLAMM":
+        pred_masks, image_np = glamm_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
+    else:
+        pred_masks, image_np = LISA_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
 
     # Convert the processed image to a byte stream
     def encode_image(image):
@@ -54,8 +65,6 @@ def process_image():
 
         _, img_encoded = cv2.imencode(".jpg", pred_mask * 100)
         masks_base64.append(base64.b64encode(img_encoded.tobytes()).decode("utf-8"))
-
-
 
     # Return the processed image and masks as a JSON response
     return jsonify({
