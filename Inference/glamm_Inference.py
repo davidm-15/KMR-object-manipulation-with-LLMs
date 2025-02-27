@@ -9,7 +9,8 @@ import json
 
 
 def StartModel():
-    args = app.parse_args(sys.argv[1:])
+    arg = []
+    args = app.parse_args(arg)
     tokenizer = app.setup_tokenizer_and_special_tokens(args)
     model = app.initialize_model(args, tokenizer)
     model = app.prepare_model_for_inference(model, args)

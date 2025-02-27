@@ -19,7 +19,7 @@ INFERENCE_TYPE = os.getenv("INFERENCE_TYPE", "GLAMM")  # Default to LISA
 # Load only the selected model
 if INFERENCE_TYPE == "GLAMM":
     args = []
-    model, tokenizer, clip_image_processor, transform, args = glamm_Inference.StartModel(args)
+    model, tokenizer, clip_image_processor, transform, args = glamm_Inference.StartModel()
 else:
     args = []
     model, tokenizer, clip_image_processor, transform, args = LISA_Inference.StartModel(args)
