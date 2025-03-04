@@ -29,6 +29,14 @@ def count_with_5_7():
     params = {"num1": 5, "num2": 7}
     call_endpoint("Count", params)
 
+def honk_on():
+    call_endpoint("HonkOn")
+
+def honk_off():
+    call_endpoint("HonkOff")
+
+def set_pose():
+    call_endpoint("SetPose")
 
 def get_pose():
     call_endpoint("getPose")
@@ -99,6 +107,18 @@ def main():
 
             case "s":
                 get_pose()
+                time.sleep(0.2)
+
+            case "l":
+                set_pose()
+                time.sleep(0.2)
+
+            case "p":
+                honk_on()
+                time.sleep(0.2)
+            
+            case "o":
+                honk_off()
                 time.sleep(0.2)
 
             case "esc":
