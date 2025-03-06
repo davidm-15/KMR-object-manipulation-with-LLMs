@@ -14,39 +14,39 @@ from PIL import Image, ImageDraw
 import os
 
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-device = "cpu"
+device = "cuda"
 
 def main():
     input_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/MustardBottle/inputs"
-    output_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/MustardBottle/outputs"
+    output_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/MustardBottle/outputs2"
     os.makedirs(output_dir, exist_ok=True)
 
     torch.cuda.empty_cache()
 
-    texts = [["a yellow mustard bottle"]]
+    # texts = [["a yellow mustard bottle"]]
+    texts = ["a yellow mustard bottle"]
     # texts = "a yellow mustard bottle"
-    test_models = ["IDEA"]
+    test_models = ["glamm"]
 
     for model in test_models:
         used_model = model
         if used_model == "OWLVIT2":
             processor, model = load_OWLVIT2()
             inference_function = inference_OWLVIT
+
         elif used_model == "OWLVIT":
             processor, model = load_OWLVIT()
-
             inference_function = inference_OWLVIT
-        elif used_model == "glamm":
-            processor, model = load_glamm()
 
+        elif used_model == "glamm":
+            print("Loading GLAMM")
+            processor, model = load_glamm()
             inference_function = inference_glamm
         
         elif used_model == "omdet":
             processor, model = load_omdet()
-
             inference_function = inference_omdet
 
         elif used_model == "OWLVIT2Xenova":
@@ -324,6 +324,6 @@ def glamm():
 
 
 if __name__ == "__main__":
-    # main()
+    main()
 
-    QWEN()
+    # QWEN()

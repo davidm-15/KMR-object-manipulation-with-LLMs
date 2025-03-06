@@ -1,28 +1,29 @@
 import sys
 import os
-
-sys.path.append('../Inference/')
-import LISA_Inference
-# import glamm_Inference
+from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 
 from flask import Flask, request, jsonify
 import cv2
 import numpy as np
 import base64
 import torch
+from PIL import Image
+
 
 app = Flask(__name__)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Choose inference type based on environment variable (LISA or GLAMM)
-INFERENCE_TYPE = os.getenv("INFERENCE_TYPE", "LISA")  # Default to LISA
+INFERENCE_TYPE = os.getenv("INFERENCE_TYPE", "GLAMM")  # Default to LISA
 
 # Load only the selected model
 if INFERENCE_TYPE == "GLAMM":
-    args = []
-    # model, tokenizer, clip_image_processor, transform, args = glamm_Inference.StartModel()
-else:
-    args = []
-    model, tokenizer, clip_image_processor, transform, args = LISA_Inference.StartModel(args)
+    model_id = "IDEA-Research/grounding-dino-base"
+    processor = AutoProcessor.from_pretrained(model_id)
+    print("Loading model...")
+    print("Model ID:", model_id)
+    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
+
 
 
 def encode_image(image):
@@ -39,62 +40,57 @@ def process_image():
     # Read the image
     image_file = request.files["image"]
     image = cv2.imdecode(np.frombuffer(image_file.read(), np.uint8), cv2.IMREAD_COLOR)
+    # Convert the image to RGB
+    # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     output_image_path = "images/received_image.jpg"
     cv2.imwrite(output_image_path, image)
 
     # Read the prompt
-    prompt = request.form["prompt"]
+    prompt = [request.form["prompt"]]
     print(f"Received prompt: {prompt}")
 
+
+    # Convert the image to a PIL object
+    image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     # Process using the selected model
     if INFERENCE_TYPE == "GLAMM":
-        # pred_masks, image_np = glamm_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
-        """s"""
-    else:
-        pred_masks, image_np = LISA_Inference.ProcessPromptImage(args, model, tokenizer, clip_image_processor, transform, prompt, image)
+        boxes, scores, labels = inference_glamm(processor, model, image, prompt)
+        image_np = cv2.imread(output_image_path)
+        print("Boxes:", boxes)
+        print("Scores:", scores)
+        print("Labels:", labels)
+
+        bounding_boxes = []
+        for box in boxes:
+            x1, y1, x2, y2 = box.int().tolist()
+            bounding_boxes.append([int(x1), int(y1), int(x2), int(y2)])
 
 
-    bounding_boxes = []
-
-    for i, pred_mask in enumerate(pred_masks):
-        if pred_mask.shape[0] == 0:
-            continue
-
-        pred_mask = pred_mask.detach().cpu().numpy()[0]
-        pred_mask = pred_mask > 0
-
-        # Find contours of the mask
-        contours, _ = cv2.findContours(pred_mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            bounding_boxes.append([x, y, x + w, y + h])
-
-    # Print the bounding boxes
-    print("Bounding boxes:", bounding_boxes)
+        return jsonify({
+            "bounding_boxes": bounding_boxes
+        })
+        
 
 
-    # Convert the processed image to a byte stream
 
-    processed_image_base64 = encode_image(image_np)
+def inference_glamm(processor, model, image, texts):
+    inputs = processor(images=image, text=texts, return_tensors="pt").to(device)
+    outputs = model(**inputs)
 
-    # Convert the masks to a byte stream
-    masks_base64 = []
+    results = processor.post_process_grounded_object_detection(
+        outputs,
+        inputs.input_ids,
+        box_threshold=0.4,
+        text_threshold=0.3,
+        target_sizes=[image.size[::-1]]
+    )
 
-    for i, pred_mask in enumerate(pred_masks):
-        if pred_mask.shape[0] == 0:
-            continue
+    boxes = results[0]["boxes"]
+    scores = results[0]["scores"]
+    labels = results[0]["labels"]
+    return boxes, scores, labels
 
-        pred_mask = pred_mask.detach().cpu().numpy()[0]
-        pred_mask = pred_mask > 0
 
-        _, img_encoded = cv2.imencode(".jpg", pred_mask * 100)
-        masks_base64.append(base64.b64encode(img_encoded.tobytes()).decode("utf-8"))
-
-    # Return the processed image and masks as a JSON response
-    return jsonify({
-        "processed_image": processed_image_base64,
-        "pred_masks": masks_base64
-    })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
