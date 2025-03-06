@@ -1,9 +1,10 @@
 import requests
-import keyboard  # You'll need to install this: pip install keyboard
-import time #Import time module
+import tkinter as tk
+import time
 
 # Change this to your KUKA robot's IP address
-ROBOT_IP = "172.31.1.10"
+# ROBOT_IP = "172.31.1.10"
+ROBOT_IP = "10.35.129.5"
 PORT = 30000
 
 def call_endpoint(endpoint, params=None):
@@ -15,118 +16,105 @@ def call_endpoint(endpoint, params=None):
         response = requests.get(url)
         if response.status_code == 200:
             print(f"Response from {endpoint}:", response.text)
-            return response.json()
         else:
             print(f"Failed to get a valid response from {endpoint}. Status Code:", response.status_code)
+        return response
     except Exception as e:
         print(f"Error calling {endpoint}:", e)
+        return None
 
-def count_with_1_2():
-    params = {"num1": 1, "num2": 2}
-    call_endpoint("Count", params)
-
-def count_with_5_7():
-    params = {"num1": 5, "num2": 7}
-    call_endpoint("Count", params)
-
-def honk_on():
-    call_endpoint("HonkOn")
-
-def honk_off():
-    call_endpoint("HonkOff")
-
-def set_pose():
-    call_endpoint("SetPose")
-
-def get_pose():
-    call_endpoint("getPose")
-
-def capture_image():
-    call_endpoint("CaptureImage")
-
-def move_up():
-    params = {"x": 0.1, "y": 0, "Theta": 0}
+def move(x, y, theta):
+    params = {"x": x, "y": y, "Theta": theta}
     call_endpoint("ArrowsMove", params)
 
-def move_down():
-    params = {"x": -0.1, "y": 0, "Theta": 0}
-    call_endpoint("ArrowsMove", params)
+def goto_position(x, y, z, a, b, c):
+    params = {"x": x, "y": y, "z": z, "a": a, "b": b, "c": c, "Speed": 1, "Motion": "ptp"}
+    call_endpoint("GotoPosition", params)
 
-def move_left():
-    params = {"x": 0, "y": 0.1, "Theta": 0}
-    call_endpoint("ArrowsMove", params)
+def goto_joint(a1, a2, a3, a4, a5, a6, a7):
+    params = {"A1": a1, "A2": a2, "A3": a3, "A4": a4, "A5": a5, "A6": a6, "A7": a7, "Speed": 1}
+    response = call_endpoint("GotoJoint", params)
+    return response
 
-def move_right():
-    params = {"x": 0, "y": -0.1, "Theta": 0}
-    call_endpoint("ArrowsMove", params)
+def GoAround():
+    Start = {"A1": -2.9, "A2": -0.106, "A3": -0.068, "A4": 2.094, "A5": 1.643, "A6": 1.381, "A7": 0.150, "Speed": 0.2}
+    End = {"A1": 2.9, "A2": -0.106, "A3": -0.068, "A4": 2.094, "A5": 1.643, "A6": 1.381, "A7": 0.150, "Speed": 0.2}
 
-def rotate_left():
-    params = {"x": 0, "y": 0, "Theta": 0.1}
-    call_endpoint("ArrowsMove", params)
+    steps = 8
+    for i in range(steps + 1):
+        params = {key: Start[key] + (End[key] - Start[key]) * i / steps for key in Start}
+        response = goto_joint(params["A1"], params["A2"], params["A3"], params["A4"], params["A5"], params["A6"], params["A7"])
+        while response is None or response.status_code != 200:
+            print("Waiting for a valid response...")
+            response = goto_joint(params["A1"], params["A2"], params["A3"], params["A4"], params["A5"], params["A6"], params["A7"])
 
-def rotate_right():
-    params = {"x": 0, "y": 0, "Theta": -0.1}
-    call_endpoint("ArrowsMove", params)
+def go_home():
+    call_endpoint("GoHome")
 
-def main():
-    print("Press the up arrow to call Count with 5 and 7.")
-    print("Press the down arrow to call Count with 1 and 2.")
-    print("Press ESC to exit.")
+def create_gui():
+    root = tk.Tk()
+    root.title("KUKA KMR IIWA Controller")
+    root.geometry("500x600")
+    
+    tk.Button(root, text="↑", command=lambda: move(0.1, 0, 0)).pack()
+    
+    frame = tk.Frame(root)
+    frame.pack()
+    tk.Button(frame, text="←", command=lambda: move(0, 0.1, 0)).pack(side=tk.LEFT)
+    tk.Button(frame, text="→", command=lambda: move(0, -0.1, 0)).pack(side=tk.RIGHT)
+    
+    tk.Button(root, text="↓", command=lambda: move(-0.1, 0, 0)).pack()
+    
+    tk.Button(root, text="Rotate Left", command=lambda: move(0, 0, 0.1)).pack()
+    tk.Button(root, text="Rotate Right", command=lambda: move(0, 0, -0.1)).pack()
+    tk.Button(root, text="Capture Image", command=lambda: call_endpoint("CaptureImage")).pack()
+    tk.Button(root, text="Get Pose", command=lambda: call_endpoint("GetPose")).pack()
+    tk.Button(root, text="Set Pose", command=lambda: call_endpoint("SetPose")).pack()
+    tk.Button(root, text="Honk On", command=lambda: call_endpoint("HonkOn")).pack()
+    tk.Button(root, text="Honk Off", command=lambda: call_endpoint("HonkOff")).pack()
+    tk.Button(root, text="Get end pose", command=lambda: call_endpoint("GetIIWAposition")).pack()
+    tk.Button(root, text="Get joints pose", command=lambda: call_endpoint("GetIIWAJointsPosition")).pack()
+    
+    # Goto Position Section
+    goto_frame = tk.Frame(root)
+    goto_frame.pack(pady=10)
+    
+    labels = ["X", "Y", "Z", "A", "B", "C"]
+    entries = []
+    for i, label in enumerate(labels):
+        tk.Label(goto_frame, text=label+":").grid(row=0, column=i*2)
+        entry = tk.Entry(goto_frame, width=5)
+        entry.grid(row=0, column=i*2+1)
+        entries.append(entry)
+    
+    tk.Button(goto_frame, text="Go To Position", command=lambda: goto_position(
+        float(entries[0].get()), float(entries[1].get()), float(entries[2].get()),
+        float(entries[3].get()), float(entries[4].get()), float(entries[5].get())
+    )).grid(row=0, column=12)
+    
+    # Goto Joint Position Section
+    joint_frame = tk.Frame(root)
+    joint_frame.pack(pady=10)
+    
+    joint_labels = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]
+    joint_entries = []
+    for i, label in enumerate(joint_labels):
+        tk.Label(joint_frame, text=label+":").grid(row=0, column=i*2)
+        entry = tk.Entry(joint_frame, width=5)
+        entry.grid(row=0, column=i*2+1)
+        joint_entries.append(entry)
+    
+    tk.Button(joint_frame, text="Go To Joint Position", command=lambda: goto_joint(
+        float(joint_entries[0].get()), float(joint_entries[1].get()), float(joint_entries[2].get()),
+        float(joint_entries[3].get()), float(joint_entries[4].get()), float(joint_entries[5].get()), float(joint_entries[6].get())
+    )).grid(row=0, column=14)
+    
 
-    while True:
-        key = keyboard.read_event().name
+    tk.Button(root, text="Go Around", command=lambda: GoAround()).pack()
 
-        match key:
-            case "down":
-                move_down()
-                time.sleep(0.2) # Add a small delay
+    tk.Button(root, text="Go Home", command=lambda: go_home()).pack()
 
-            case "up":
-                move_up()
-                time.sleep(0.2) # Add a small delay
-
-            case "left":
-                move_left()
-                time.sleep(0.2)
-
-            case "right":
-                move_right()
-                time.sleep(0.2)
-
-            case "a":
-                rotate_left()
-                time.sleep(0.2)
-
-            case "d":
-                rotate_right()
-                time.sleep(0.2)
-
-            case "c":
-                capture_image()
-                time.sleep(0.2)
-
-            case "s":
-                get_pose()
-                time.sleep(0.2)
-
-            case "l":
-                set_pose()
-                time.sleep(0.2)
-
-            case "p":
-                honk_on()
-                time.sleep(0.2)
-            
-            case "o":
-                honk_off()
-                time.sleep(0.2)
-
-            case "esc":
-                print("Exiting...")
-                break
-
-        
-        time.sleep(0.01) #small delay for CPU usage
+    root.mainloop()
 
 if __name__ == "__main__":
-    main()
+    create_gui()
