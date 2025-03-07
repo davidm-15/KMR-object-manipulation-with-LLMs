@@ -7,7 +7,7 @@ import keyboard
 def FieldOfView():
     pass
 
-def capture_image(image):
+def save_image(image):
     # Generate timestamp-based filename
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     filename = f"images/basler_image_{timestamp}.png"
@@ -15,6 +15,31 @@ def capture_image(image):
     # Save image
     cv2.imwrite(filename, image)
     print(f"Image saved as {filename}")
+
+
+def InitializeCamera():
+    camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+    camera.Open()
+    
+    camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+    converter = pylon.ImageFormatConverter()
+    converter.OutputPixelFormat = pylon.PixelType_BGR8packed
+
+    return camera, converter
+
+
+def CaptureImage(camera, converter):
+    grab_result = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+    
+    if grab_result.GrabSucceeded():
+        image = converter.Convert(grab_result).GetArray()
+        grab_result.Release()
+        
+        return image
+    else:
+        return None
+
+
 
 def main():
     # Initialize Basler camera
@@ -46,7 +71,7 @@ def main():
                 
                 current_time = time.time()
                 if keyboard.is_pressed('space') and (current_time - last_capture_time) > capture_delay:
-                    capture_image(image)
+                    save_image(image)
                     last_capture_time = current_time
                 
                 if keyboard.is_pressed('q') or cv2.waitKey(1) & 0xFF == ord('q'):
