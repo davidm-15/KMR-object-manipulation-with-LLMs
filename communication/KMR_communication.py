@@ -1,6 +1,9 @@
 import requests
 import tkinter as tk
 import time
+from ImageProcessing.Camera import BaslerCamera
+from ImageProcessing.Camera import RealSenseCamera
+
 
 # Change this to your KUKA robot's IP address
 # ROBOT_IP = "172.31.1.10"
@@ -44,9 +47,10 @@ def GoAround():
     for i in range(steps + 1):
         params = {key: Start[key] + (End[key] - Start[key]) * i / steps for key in Start}
         response = goto_joint(params["A1"], params["A2"], params["A3"], params["A4"], params["A5"], params["A6"], params["A7"])
-        while response is None or response.status_code != 200:
-            print("Waiting for a valid response...")
-            response = goto_joint(params["A1"], params["A2"], params["A3"], params["A4"], params["A5"], params["A6"], params["A7"])
+        if response and response.text.strip() == "OK":
+            time.sleep(1)
+        
+            time.sleep(1)
 
 def go_home():
     call_endpoint("GoHome")
