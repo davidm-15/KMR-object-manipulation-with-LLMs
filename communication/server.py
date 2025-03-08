@@ -1,6 +1,7 @@
 import sys
 import os
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
+from transformers import DPTImageProcessor, DPTForDepthEstimation
 
 from flask import Flask, request, jsonify
 import cv2
@@ -8,6 +9,12 @@ import numpy as np
 import base64
 import torch
 from PIL import Image
+
+
+sys.path.append('../../megapose6d/src/megapose/scripts')
+import run_inference_on_example
+from megapose.datasets.scene_dataset import CameraData, ObjectData
+from megapose.lib3d.transform import Transform
 
 
 app = Flask(__name__)
@@ -55,6 +62,9 @@ def process_image():
     # Process using the selected model
     if INFERENCE_TYPE == "GLAMM":
         boxes, scores, labels = inference_glamm(processor, model, image, prompt)
+
+        if len(boxes) == 0:
+            return jsonify({"error": "No objects detected"}), 400
         image_np = cv2.imread(output_image_path)
         print("Boxes:", boxes)
         print("Scores:", scores)
@@ -66,11 +76,53 @@ def process_image():
             bounding_boxes.append([int(x1), int(y1), int(x2), int(y2)])
 
 
+        # TODO: Feed the bounding boxes through the megapose
+
+
+
+
+
         return jsonify({
             "bounding_boxes": bounding_boxes
         })
         
 
+def megapose_inference(image, object_data):
+    depth_image = depth_estimation(image)
+    model_name = "megapose-1.0-RGB-multi-hypothesis"
+
+
+    output = run_inference_on_example.my_inference(image, depth_image, camera_data, object_data, model_name, example_dir)
+    
+    
+    
+    
+    return output
+
+
+def depth_estimation(image):
+    depth_model = "Intel/dpt-large"
+    processor = DPTImageProcessor.from_pretrained(depth_model)
+    model = DPTForDepthEstimation.from_pretrained(depth_model)
+
+    inputs = processor(images=image, return_tensors="pt").to(device)
+    with torch.no_grad():
+        outputs = model(**inputs)
+        predicted_depth = outputs.predicted_depth
+
+
+    prediction = torch.nn.functional.interpolate(
+        predicted_depth.unsqueeze(1),
+        size=image.size[::-1],
+        mode="bicubic",
+        align_corners=False,
+    )
+
+    # visualize the prediction
+    output = prediction.squeeze().cpu().numpy()
+
+
+    return outputs
 
 
 def inference_glamm(processor, model, image, texts):

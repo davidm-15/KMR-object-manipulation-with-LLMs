@@ -20,10 +20,7 @@ The server side has to have the following structure
 
 ```
 ├────KMR-object-manipulation-with-LLMs (this project)
-├────LISA
-└────groundingLMM
+├────megapose6d
 ```
 
-[LISA](https://github.com/dvlab-research/LISA?tab=readme-ov-file#training-data-preparation)
-    - had to comment or delete the file app.py
-[groundingLMM](https://github.com/mbzuai-oryx/groundingLMM)
+[megapose6d](https://github.com/megapose6d/megapose6d)
