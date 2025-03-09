@@ -9,12 +9,16 @@ import numpy as np
 import base64
 import torch
 from PIL import Image
+import json
+from pathlib import Path
+
 
 
 sys.path.append('../../megapose6d/src/megapose/scripts')
 import run_inference_on_example
 from megapose.datasets.scene_dataset import CameraData, ObjectData
 from megapose.lib3d.transform import Transform
+from megapose.datasets.scene_dataset import CameraData, ObjectData
 
 
 app = Flask(__name__)
@@ -77,8 +81,9 @@ def process_image():
 
 
         # TODO: Feed the bounding boxes through the megapose
-
-
+        example_dir = Path("/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/megapose6d/local_data/examples/mustard-bottle")
+        object_data = run_inference_on_example.load_object_data(example_dir / "inputs" / "object_data.json")
+        megapose_inference(image, object_data)
 
 
 
@@ -90,8 +95,8 @@ def process_image():
 def megapose_inference(image, object_data):
     depth_image = depth_estimation(image)
     model_name = "megapose-1.0-RGB-multi-hypothesis"
-
-
+    camera_data = CameraData.from_json(("../ImageProcessing").read_text())
+    example_dir = Path("/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/megapose6d/local_data/examples/mustard-bottle")
     output = run_inference_on_example.my_inference(image, depth_image, camera_data, object_data, model_name, example_dir)
     
     
@@ -101,6 +106,16 @@ def megapose_inference(image, object_data):
 
 
 def depth_estimation(image):
+    """
+    Perform depth estimation on the input image
+    
+    Args:
+        image: The input image
+        
+    Returns:
+        The depth estimation output
+    """
+
     depth_model = "Intel/dpt-large"
     processor = DPTImageProcessor.from_pretrained(depth_model)
     model = DPTForDepthEstimation.from_pretrained(depth_model)
