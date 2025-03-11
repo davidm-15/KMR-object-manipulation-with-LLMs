@@ -9,6 +9,7 @@
 !communication/
 communication/*
 !communication/*.py
+communication/Testing.py
 
 !RobotNavigation/
 RobotNavigation/*
