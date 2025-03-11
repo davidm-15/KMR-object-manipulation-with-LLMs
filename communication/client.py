@@ -61,10 +61,8 @@ def mustard_bottle():
 
             
             processed_image.save(f"{output_folder}/combined_with_bbox_{i}.jpg")
-
             print(f"Combined image with bounding box saved to {output_folder}/combined_with_bbox_{i}.jpg")
 
-            print(f"Combined image saved to {output_folder}/combined_{i}.jpg")
 
 
 def Inference(image_data, prompt):

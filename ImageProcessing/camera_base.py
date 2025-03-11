@@ -36,6 +36,7 @@ class CameraBase:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             filename = Path(f"images/{self.__class__.__name__}_image_{timestamp}.png")
 
+        filename = Path(filename)
         filename.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(filename), image)
         print(f"Image saved as {filename}")
