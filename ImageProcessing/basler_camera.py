@@ -8,7 +8,12 @@ class BaslerCamera(CameraBase):
     def __init__(self, config_path: Optional[Path] = None) -> None:
         """Initialize the Basler camera with optional config."""
         super().__init__(config_path)
-        self.camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+        factory = pylon.TlFactory.GetInstance()
+        ptl = factory.CreateTl('BaslerGigE')
+        empty_camera_info = ptl.CreateDeviceInfo()
+        empty_camera_info.SetPropertyValue('IpAddress', '172.31.10.20')
+        camera_device = ptl.CreateDevice(empty_camera_info)
+        self.camera = pylon.InstantCamera(camera_device)
         self.camera.Open()
         self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
 
