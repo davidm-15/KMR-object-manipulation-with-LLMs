@@ -11,11 +11,13 @@ from flask import Flask, request, jsonify
 from PIL import Image
 from transformers import (
     AutoProcessor, AutoModelForZeroShotObjectDetection, 
-    DPTImageProcessor, DPTForDepthEstimation
+    DPTImageProcessor, DPTForDepthEstimation, pipeline
 )
 
 sys.path.append('../../megapose6d/src/megapose/scripts')
-import run_inference_on_example
+sys.path.append('../megapose6d/src/megapose/scripts')
+
+from megapose.scripts import run_inference_on_example
 from megapose.datasets.scene_dataset import CameraData
 from megapose.lib3d.transform import Transform
 
@@ -85,7 +87,16 @@ def process_image():
             boxes, scores, labels = inference_glamm(image, prompt)
             bounding_boxes = [[int(b[0]), int(b[1]), int(b[2]), int(b[3])] for b in boxes]
 
-            return jsonify({"bounding_boxes": bounding_boxes})
+            if not bounding_boxes:
+                return jsonify({"bounding_boxes": bounding_boxes})
+            else:
+                depth_image = depth_estimation(image)
+                depth_image_encoded = encode_image(depth_image)
+                return jsonify({
+                    "bounding_boxes": bounding_boxes,
+                    "depth_image": depth_image_encoded,
+                })
+
 
     except Exception as e:
         logging.error(f"Error processing image: {e}")
