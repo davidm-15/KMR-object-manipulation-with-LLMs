@@ -33,10 +33,10 @@ if INFERENCE_TYPE == "GLAMM":
     model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
     logging.info(f"Loaded GLAMM model: {model_id}")
 
-depth_model_id = "Intel/dpt-large"
-depth_processor = DPTImageProcessor.from_pretrained(depth_model_id)
-depth_model = DPTForDepthEstimation.from_pretrained(depth_model_id).to(device)
-logging.info(f"Loaded Depth Estimation model: {depth_model_id}")
+# depth_model_id = "Intel/dpt-large"
+# depth_processor = DPTImageProcessor.from_pretrained(depth_model_id)
+# depth_model = DPTForDepthEstimation.from_pretrained(depth_model_id).to(device)
+# logging.info(f"Loaded Depth Estimation model: {depth_model_id}")
 
 
 def encode_image(image):
@@ -90,11 +90,11 @@ def process_image():
             if not bounding_boxes:
                 return jsonify({"bounding_boxes": bounding_boxes})
             else:
-                depth_image = depth_estimation(image)
-                depth_image_encoded = encode_image(depth_image)
+                # depth_image = depth_estimation(image)
+                # depth_image_encoded = encode_image(depth_image)
                 return jsonify({
                     "bounding_boxes": bounding_boxes,
-                    "depth_image": depth_image_encoded,
+                    # "depth_image": depth_image_encoded,
                 })
 
 
