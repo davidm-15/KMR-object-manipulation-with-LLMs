@@ -10,9 +10,34 @@ class BaslerCamera(CameraBase):
         super().__init__(config_path)
         factory = pylon.TlFactory.GetInstance()
         ptl = factory.CreateTl('BaslerGigE')
-        empty_camera_info = ptl.CreateDeviceInfo()
-        empty_camera_info.SetPropertyValue('IpAddress', '172.31.10.20')
-        camera_device = ptl.CreateDevice(empty_camera_info)
+        camera_info = ptl.CreateDeviceInfo()
+
+
+
+        cable = True
+        if cable:
+            camera_info.SetPortNr('3956')
+            camera_info.SetIpAddress('172.31.1.20')
+        else:
+            camera_info.SetPortNr('3956')
+            camera_info.SetIpAddress('10.35.129.5')
+
+
+        print("Available properties:")
+        keys = camera_info.GetPropertyNames()[1]
+        print(keys)
+        for key in keys:
+            print(f"{key}: {camera_info.GetPropertyValue(key)}")
+
+
+
+        camera_device = ptl.CreateDevice(camera_info)
+        print(f"Camera device: {str(camera_device)}")
+
+        
+        
+
+
         self.camera = pylon.InstantCamera(camera_device)
         self.camera.Open()
         self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)

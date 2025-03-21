@@ -17,8 +17,14 @@ PORT = 30000
 
 # Initialize the Basler camera
 # camera = RealSenseCamera()
-camera = BaslerCamera()
-# camera = None
+# camera = BaslerCamera()
+camera = None
+
+
+def get_rotation_matrix_2D(angle: float = 0.0) -> np.array:
+    R = np.array([[np.cos(angle), -np.sin(angle)],
+                  [np.sin(angle), np.cos(angle)]])
+    return R
 
 def call_endpoint(endpoint, params=None):
     url = f"http://{ROBOT_IP}:{PORT}/{endpoint}"
@@ -50,12 +56,51 @@ def goto_joint(a1, a2, a3, a4, a5, a6, a7, speed=0.2):
     response = call_endpoint("GotoJoint", params)
     return response
 
+def get_iiwa_base_in_world(position):
+    """ Function for calculating the position of the iiwa base in the world coordinate system.
+
+    Args:
+        position (list): The position of the iiwa end effector in the world coordinate system. Must be in mm!!!
+
+    Returns:
+        np.array: The position of the iiwa base in the world coordinate system. 
+    
+    """
+
+    # Define the offsets for the iiwa base position (in mm)
+    x_offset = 363
+    y_offset = -184
+    z_offset = 700
+
+
+    # Create a rotation matrix for the given angle (position[2])
+    rotation_matrix = get_rotation_matrix_2D(position[2])
+
+    # Apply the rotation matrix to the offsets
+    offset_vector = np.array([x_offset, y_offset])
+    rotated_offset = rotation_matrix @ offset_vector
+
+    # Calculate the final position
+    iiwa_base_position = np.array([position[0] + rotated_offset[0], position[1] + rotated_offset[1], z_offset])
+    
+    return iiwa_base_position
+
+
 def Get_joints_Write_to_file():
-    response = call_endpoint("GetIIWAJointsPosition")
-    if response:
-        joints_data = response.json()
+    joints = call_endpoint("GetIIWAJointsPosition")
+    pose = call_endpoint("GetIIWAposition")
+    data = {}
+    output_folder = "communication/images/OneAxis/"
+    output_file = "HandPoses.json"
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    if joints and pose:
+        joints_data = joints.json()
+        pose_data = pose.json()
+        data["joints"] = joints_data
+        data["pose"] = pose_data
         try:
-            with open("communication/images/CalibrationImages/HandPoses.json", "r") as file:
+            with open(f"{output_folder}{output_file}", "r") as file:
                 try:
                     existing_data = json.load(file)
                 except json.JSONDecodeError:
@@ -63,9 +108,9 @@ def Get_joints_Write_to_file():
         except FileNotFoundError:
             existing_data = []
 
-        existing_data.append(joints_data)
+        existing_data.append(data)
 
-        with open("communication/images/CalibrationImages/HandPoses.json", "w") as file:
+        with open(f"{output_folder}{output_file}", "w") as file:
             json.dump(existing_data, file, indent=4)
 
 def MoveToLocation(TargetNumber):
@@ -245,7 +290,7 @@ def save_calibration_image():
 
 def move_to_hand_poses():
         try:
-            with open("communication/images/CalibrationImages/HandPoses_1.json", "r") as json_file:
+            with open("communication/images/CalibrationImages/HandPoses2.json", "r") as json_file:
                 hand_poses = json.load(json_file)
         except FileNotFoundError:
             print("HandPoses.json file not found.")
@@ -256,8 +301,8 @@ def move_to_hand_poses():
 
         for pose in hand_poses:
             joints = pose["joints"]
-            radians_joints = {key: np.deg2rad(value) for key, value in joints.items()}
-            # radians_joints = joints
+            # radians_joints = {key: np.deg2rad(value) for key, value in joints.items()}
+            radians_joints = joints
             response = goto_joint(radians_joints["A0"], radians_joints["A1"], radians_joints["A2"], radians_joints["A3"], radians_joints["A4"], radians_joints["A5"], radians_joints["A6"], speed=0.3)
             if response and response.text.strip() == "OK":
                 time.sleep(2.5)
