@@ -11,17 +11,17 @@ communication/*
 !communication/*.py
 communication/Testing.py
 
-!ImageProcessing/
-ImageProcessing/*
-!ImageProcessing/*.py
+!image_processing/
+image_processing/*
+!image_processing/*.py
 
 !Inference/
 Inference/*
 !Inference/*.py
 
-!ImageProcessing/config/
-ImageProcessing/config/*
-!ImageProcessing/config/*.json
+!image_processing/calibration_data/
+image_processing/calibration_data/*
+!image_processing/calibration_data/*.json
 
 # Ignore all files named .DS_Store or ending with .log
 **/.DS_Store

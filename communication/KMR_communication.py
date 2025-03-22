@@ -1,8 +1,8 @@
 import requests
 import tkinter as tk
 import time
-from ImageProcessing.basler_camera import BaslerCamera
-from ImageProcessing.realsense_camera import RealSenseCamera
+from image_processing.basler_camera import BaslerCamera
+from image_processing.realsense_camera import RealSenseCamera
 from communication.client import send_image_to_server
 import json
 import numpy as np

@@ -24,3 +24,22 @@ The server side has to have the following structure
 ```
 
 [megapose6d](https://github.com/megapose6d/megapose6d)
+
+
+
+
+### Running the code
+
+To run the GUI for commanding KMR use
+
+```
+python -m image_processing.camera_calibration
+```
+
+Run inrinsic calibration
+
+```
+python -m image_processing.camera_calibration intrinsic
+```
+
+
