@@ -11,10 +11,6 @@ communication/*
 !communication/*.py
 communication/Testing.py
 
-!RobotNavigation/
-RobotNavigation/*
-!RobotNavigation/*.py
-
 !ImageProcessing/
 ImageProcessing/*
 !ImageProcessing/*.py

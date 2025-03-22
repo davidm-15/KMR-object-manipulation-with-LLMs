@@ -415,10 +415,10 @@ if __name__ == "__main__":
     # convert()
 
 
-    # calib_matrix = np.array([[-0.00279883, -0.99995403,  0.00917078, 96.90320424],
-    #                         [ 0.99959602, -0.00305698, -0.02825706, -4.95372373],
-    #                         [ 0.02828379,  0.00908799,  0.99955862, 63.4821385 ],
-    #                         [ 0.0,         0.0,         0.0,         1.0]])
+    calib_matrix = np.array([[-0.00279883, -0.99995403,  0.00917078, 96.90320424],
+                            [ 0.99959602, -0.00305698, -0.02825706, -4.95372373],
+                            [ 0.02828379,  0.00908799,  0.99955862, 63.4821385 ],
+                            [ 0.0,         0.0,         0.0,         1.0]])
     
     
     # pos = np.array([0, 0, 808])
@@ -515,31 +515,76 @@ if __name__ == "__main__":
         # Define the position and orientation
         position = np.array([-0.06084885817435056, 8.390708723339504, 806.0509324443722])
         orientation = np.array([3.1308282468610966, -0.8097527279037569, 3.049039185227726])  # Roll, Pitch, Yaw
-        position = position + iiwa_base
+        position = position
             
         # Compute the rotation matrix
         rotation_matrix = R.from_euler('xyz', orientation, degrees=False).as_matrix()
 
+        base_to_ee = np.hstack((rotation_matrix, position.reshape(3, 1)))
+        base_to_ee = np.vstack((base_to_ee, np.zeros((1, 4))))
+        base_to_ee[3, 3] = 1
+
         # Define the arrow directions (unit vectors)
-        arrows = np.eye(3) * 100  # Scale by 100
-        arrows = np.vstack((arrows, np.zeros(3)))  # Add row of ones for translation
-        arrows = np.hstack((arrows, np.zeros((4, 1))))  # Add column of zeros for translation
+        arrows = np.eye(3) * 350  # Scale by 100
+        arrows = np.vstack((arrows, np.ones(3)))
+        arrows = np.hstack((arrows, np.zeros((4, 1)))) 
+        arrows[3, 3] = 1
+
+        center_x = 14000
+        center_y = 15000
+        min_z = 0
+
+        def my_quiver(ax, matrix):
+            colors = ['r', 'g', 'b']
+            for i in range(3):
+                ax.plot(
+                [matrix[0, 3], matrix[0, i]],
+                [matrix[1, 3], matrix[1, i]],
+                [matrix[2, 3], matrix[2, i]],
+                color=colors[i], label=f'Axis {colors[i].upper()}'
+                )
+
+        def do_quiver(ax, matrix):
+            colors = ['r', 'g', 'b']
+            for i in range(3):
+                ax.quiver(
+                matrix[0, 3], matrix[1, 3], matrix[2, 3],  # Starting point
+                matrix[0, i], matrix[1, i], matrix[2, i],  # Direction
+                color=colors[i], label=f'Axis {colors[i].upper()}'
+                )
+
+        transformation_matrix = np.vstack((np.hstack((np.eye(3), get_iiwa_base_in_world(np.array([center_x, center_y, 0])).reshape(3, 1))), np.zeros((1, 4))))
+        transformation_matrix[3, 3] = 1
+
+        np.set_printoptions(suppress=True)
+
+
+
+        iiwa_base = transformation_matrix @ arrows
+
+        my_quiver(ax, iiwa_base)
+
+
+        
+        
+        print("Base to EE:", base_to_ee)
+        print("Arrows:", arrows)
+        print("Base to EE @ Arrows:", base_to_ee @ arrows)
+        print("Base to EE @ Arrows @ Transformation:", base_to_ee @ arrows @ transformation_matrix)
+
+        iiwa_ee = transformation_matrix @ base_to_ee @ arrows
+        my_quiver(ax, iiwa_ee)
+        
+
+        camera_pos = transformation_matrix @ base_to_ee @ calib_matrix @ arrows
+        my_quiver(ax, camera_pos)
 
 
 
 
-        # Rotate the arrows
-        rotated_arrows = arrows @ rotation_matrix
 
-        # Plot the arrows
-        colors = ['r', 'g', 'b']
-        for i in range(3):
-            ax.quiver(
-            position[0], position[1], position[2],  # Starting point
-            rotated_arrows[0, i], rotated_arrows[1, i], rotated_arrows[2, i],  # Direction
-            color=colors[i], label=f'Axis {colors[i].upper()}'
-            )
-
+        set_axes_equal(ax)
+        plt.show()
 
         # Plot the iiwa base
         ax.scatter(iiwa_base[0], iiwa_base[1], iiwa_base[2], color='g', s=100, label='iiwa Base')
