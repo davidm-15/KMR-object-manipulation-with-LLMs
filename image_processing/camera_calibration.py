@@ -8,15 +8,20 @@ from image_processing.basler_camera import BaslerCamera
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 from communication.KMR_communication import get_iiwa_base_in_world
+from communication.KMR_communication import GetCameraInWorld
 from utils.image_utils import get_rotation_matrix_x, get_rotation_matrix_y, get_rotation_matrix_z
 import argparse
+import json
+from scipy.spatial.transform import Rotation as R
+import numpy as np
+import os
 
 
 def main():
     np.set_printoptions(suppress=True)
 
     parser = argparse.ArgumentParser(description="Camera Calibration Utility")
-    parser.add_argument("function", choices=["intrinsic", "extrinsic", "capture"], help="Function to execute")
+    parser.add_argument("function", choices=["intrinsic", "extrinsic", "capture", "visualize_box", "camera_pose", "go_around", "recalculate"], help="Function to execute")
     parser.add_argument("--images_path", type=str, help="Path to the folder containing images")
     parser.add_argument("--display_images", action="store_true", help="Display images while processing")
     parser.add_argument("--output_path", type=str, help="Path to save calibration data")
@@ -24,14 +29,27 @@ def main():
 
     args = parser.parse_args()
 
-    if args.function == "intrinsic":
-        intrinsic_calibration("images\intrinsic_calibration", display_images=False, output_path="image_processing\calibration_data")
+    match args.function:
+        case "intrinsic":
+            intrinsic_calibration("images\intrinsic_calibration", display_images=False, output_path="image_processing\calibration_data")
 
-    elif args.function == "extrinsic":
-        extrinsic_calibration("images\extrinsic_calibration", intrinsic_path="image_processing\calibration_data\camera_intrinsics.json", output_path="image_processing\calibration_data")
+        case "extrinsic":
+            extrinsic_calibration("images\extrinsic_calibration", intrinsic_path="image_processing\calibration_data\camera_intrinsics.json", output_path="image_processing\calibration_data")
 
-    elif args.function == "capture":
-        result = capture_images(output_path=args.output_path or args.images_path)
+        case "capture":
+            result = capture_images("images\intrinsic_calibration")
+
+        case "visualize_box":
+            visualize_box()
+
+        case "camera_pose":
+            camera_pose()
+
+        case "go_around":
+            visualise_go_around()
+
+        case "recalculate":
+            Recalculate_world_position()
 
 
 def intrinsic_calibration(images_path: str, **kwargs: dict) -> dict:
@@ -134,6 +152,7 @@ def capture_images(output_folder: str) -> None:
     camera = BaslerCamera()
     camera.stream_and_capture(output_folder)
     camera.close()
+    pass
 
 
 def get_robot_transformation(image_path: str) -> np.array:
@@ -425,6 +444,7 @@ def visualize_box():
     # Define the position and orientation
     position = np.array([-0.06084885817435056, 8.390708723339504, 806.0509324443722])
     orientation = np.array([3.1308282468610966, -0.8097527279037569, 3.049039185227726])  # Roll, Pitch, Yaw
+    # orientation[0], orientation[2] = orientation[2], orientation[0]  # Swap roll and yaw
     position = position
         
     # Compute the rotation matrix
@@ -477,6 +497,108 @@ def visualize_box():
 
     set_axes_equal(ax)
     plt.show()
+
+
+def camera_pose():
+    # Load the calibration matrix from the camera_extrinsic.json file
+    with open("image_processing/calibration_data/camera_extrinsic.json", "r") as f:
+        extrinsic_data = json.load(f)
+    calib_matrix = np.array(extrinsic_data["transformation_matrix"])
+
+    # Define the position and orientation in the world frame
+    position = np.array([-0.06084885817435056, 8.390708723339504, 806.0509324443722])
+    orientation = np.array([3.1308282468610966, -0.8097527279037569, 3.049039185227726])  # Roll, Pitch, Yaw
+
+    # Compute the rotation matrix
+    rotation_matrix = R.from_euler('xyz', orientation, degrees=False).as_matrix()
+
+    # Create the transformation matrix for the end effector (world to EE)
+    world_to_ee = np.hstack((rotation_matrix, position.reshape(3, 1)))
+    world_to_ee = np.vstack((world_to_ee, np.array([0, 0, 0, 1])))
+
+    # Compute the end effector position in the world frame
+    ee_position = world_to_ee[:3, 3]
+
+    print("End Effector Position in World Frame:", ee_position)
+    return ee_position
+
+def visualise_go_around():
+    # Load the JSON file
+
+    json_file = "images/GoAround/data.json"
+    # json_file = "communication/HandPoses.json"
+    # json_file = "images/GoAround/new_camera_in_world.json"
+    with open(json_file, "r") as f:
+        data = json.load(f)
+
+    # Extract camera_in_world matrices
+    camera_matrices = [np.array(item["camera_in_world"]) for item in data]
+
+    # Plot the camera positions and orientations
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    for matrix in camera_matrices:
+        # Extract rotation and translation
+        rotation = matrix[:3, :3]
+        translation = matrix[:3, 3]
+
+        # Define the axes (unit vectors) in the local frame
+        axes = np.eye(3)
+
+        # Transform the axes to the world frame
+        transformed_axes = rotation @ axes
+
+        # Plot the axes using quiver
+        colors = ['r', 'g', 'b']
+        scale = 50
+        for i in range(3):
+            ax.quiver(
+            translation[0], translation[1], translation[2],  # Origin
+            transformed_axes[0, i] * scale, transformed_axes[1, i] * scale, transformed_axes[2, i] * scale,  # Direction (scaled)
+            color=colors[i], label=f'Axis {colors[i].upper()}'
+            )
+
+    # Plot the global X, Y, Z axes
+    ax.quiver(14000, 14000, 0, 4000, 0, 0, color='r', linestyle='dashed', label='Global X')
+    ax.quiver(14000, 14000, 0, 0, 4000, 0, color='g', linestyle='dashed', label='Global Y')
+    ax.quiver(14000, 14000, 0, 0, 0, 4000, color='b', linestyle='dashed', label='Global Z')
+    set_axes_equal(ax)
+    ax.set_title("Camera Positions and Orientations")
+    plt.show()
+
+
+def Recalculate_world_position():
+    # Load the JSON file
+    input_file = "images/GoAround/data.json"
+    output_file = "images/GoAround/new_camera_in_world.json"
+
+    with open(input_file, "r") as f:
+        data = json.load(f)
+
+    new_data = []
+
+    for item in data:
+        pose = item["pose"]
+        position = item["position"]
+
+        # Extract position and orientation
+
+
+
+        camera_in_world = GetCameraInWorld(pose, position)
+        # Save the new camera_in_world
+        new_data.append({
+            "image": item["image"],
+            "pose": pose,
+            "position": position,
+            "camera_in_world": camera_in_world.tolist()
+        })
+
+    # Save the new JSON file
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    with open(output_file, "w") as f:
+        json.dump(new_data, f, indent=4)
 
 
 if __name__ == "__main__":

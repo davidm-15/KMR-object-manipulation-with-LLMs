@@ -12,8 +12,6 @@ class BaslerCamera(CameraBase):
         ptl = factory.CreateTl('BaslerGigE')
         camera_info = ptl.CreateDeviceInfo()
 
-
-
         cable = True
         if cable:
             camera_info.SetPortNr('3956')
@@ -40,6 +38,7 @@ class BaslerCamera(CameraBase):
 
         self.camera = pylon.InstantCamera(camera_device)
         self.camera.Open()
+        pylon.FeaturePersistence.Load("image_processing/calibration_data/acA2440-20gc_24998414.pfs", self.camera.GetNodeMap())
         self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
 
         self.converter = pylon.ImageFormatConverter()
