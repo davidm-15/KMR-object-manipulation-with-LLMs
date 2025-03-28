@@ -1,6 +1,6 @@
 import sys
 
-sys.path.append('../../megapose6d/src/megapose/scripts')
+sys.path.append('../megapose6d/src/megapose/scripts')
 
 import run_inference_on_example
 from pathlib import Path
@@ -11,14 +11,13 @@ from megapose.datasets.scene_dataset import CameraData, ObjectData
 from megapose.lib3d.transform import Transform
 
 
+# run me with python -m image_processing.Megapose_testing
 
 if __name__ == "__main__":
         model_name = "megapose-1.0-RGB-multi-hypothesis"
-        example_dir = Path("/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/megapose6d/local_data/examples/mustard-bottle")
+        example_dir = Path("/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects/box of jello")
         image, depth, camera_data = run_inference_on_example.load_observation(example_dir, load_depth=False)
         object_data = run_inference_on_example.load_object_data(example_dir / "inputs" / "object_data.json")
-
-
 
 
 
@@ -33,6 +32,7 @@ if __name__ == "__main__":
         print("Infos:", output.infos)
 
         out_path = Path("/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/MustardBottle/6DPose")
+        out_path = example_dir
         run_inference_on_example.save_predictions(out_path, output)
 
 
@@ -45,5 +45,5 @@ if __name__ == "__main__":
 
 
 
-        # run_inference_on_example.my_visualization(example_dir, out_path)
+        run_inference_on_example.my_visualization(example_dir, out_path / "visualizations")
 
