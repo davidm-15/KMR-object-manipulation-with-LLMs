@@ -9,7 +9,10 @@ import json
 import numpy as np
 import cv2
 import os
+import winsound
 
+
+# Run me with python -m communication.KMR_communication
 
 # Change this to your KUKA robot's IP address
 # ROBOT_IP = "172.31.1.10"
@@ -264,7 +267,7 @@ def GoAroundPositions(**kwargs):
     do_detection = kwargs.get("do_detection", False)
 
     try:
-        with open("communication/HandPoses.json", "r") as file:
+        with open("image_processing/calibration_data/GoAroundHandPoses.json", "r") as file:
             poses_data = json.load(file)
             Poses = [
                 {
@@ -280,10 +283,10 @@ def GoAroundPositions(**kwargs):
                 for pose in poses_data
             ]
     except FileNotFoundError:
-        print("HandPoses.json file not found.")
+        print("GoAroundHandPoses.json file not found.")
         return
     except json.JSONDecodeError:
-        print("Error decoding HandPoses.json.")
+        print("Error decoding GoAroundHandPoses.json.")
         return
 
     if not os.path.exists(output_folder):
@@ -381,27 +384,46 @@ def save_calibration_image(out_path: str):
 
 
 def move_to_hand_poses():
-        path = "images/extrinsic_calibration/"
-        try:
-            with open(path + "HandPoses2.json", "r") as json_file:
-                hand_poses = json.load(json_file)
-        except FileNotFoundError:
-            print("HandPoses.json file not found.")
-            return
-        except json.JSONDecodeError:
-            print("Error decoding HandPoses.json.")
-            return
+        for i in range(1, 6):
+            print(f"Moving to hand poses for ScanAround_{i}...")
 
-        for pose in hand_poses:
-            joints = pose["joints"]
-            # radians_joints = {key: np.deg2rad(value) for key, value in joints.items()}
-            radians_joints = joints
-            response = goto_joint(radians_joints["A1"], radians_joints["A2"], radians_joints["A3"], radians_joints["A4"], radians_joints["A5"], radians_joints["A6"], radians_joints["A7"], speed=0.3)
-            if response and response.text.strip() == "OK":
-                time.sleep(0.5)
-                save_calibration_image(path)
-                time.sleep(0.5)
+            path = f"images/ScanAround_{i}/"
+            input_file = "image_processing\calibration_data\GoAroundHandPoses.json"
+            try:
+                with open(input_file, "r") as json_file:
+                    hand_poses = json.load(json_file)
+            except FileNotFoundError:
+                print("HandPoses.json file not found.")
+                return
+            except json.JSONDecodeError:
+                print("Error decoding HandPoses.json.")
+                return
 
+            for pose in hand_poses:
+                joints = pose["joints"]
+                # radians_joints = {key: np.deg2rad(value) for key, value in joints.items()}
+                radians_joints = joints
+                response = goto_joint(radians_joints["A1"], radians_joints["A2"], radians_joints["A3"], radians_joints["A4"], radians_joints["A5"], radians_joints["A6"], radians_joints["A7"], speed=0.5)
+                if response and response.text.strip() == "OK":
+                    time.sleep(1.5)
+                    save_calibration_image(path)
+                    time.sleep(0.5)
+
+            print("DONE!!!")
+            time.sleep(30)
+            winsound.Beep(200, 500)  # Frequency: 1000 Hz, Duration: 500 ms
+            print("Starting in 30 seconds...")
+            time.sleep(15)
+            winsound.Beep(200, 500)
+            print("Starting in 15 seconds...")
+            time.sleep(10)
+            winsound.Beep(200, 500)
+            print("Starting in 5 seconds...")
+            time.sleep(5)
+            winsound.Beep(200, 750)
+
+            print("Starting now!")
+            
 def create_gui():
     root = tk.Tk()
     root.title("KUKA KMR IIWA Controller")
