@@ -16,12 +16,14 @@ from scipy.spatial.transform import Rotation as R
 import numpy as np
 import os
 
+# Run me with python -m image_processing.camera_calibration intrinsic
+# python -m image_processing.camera_calibration end_effector
 
 def main():
     np.set_printoptions(suppress=True)
 
     parser = argparse.ArgumentParser(description="Camera Calibration Utility")
-    parser.add_argument("function", choices=["intrinsic", "extrinsic", "capture", "visualize_box", "camera_pose", "go_around", "recalculate"], help="Function to execute")
+    parser.add_argument("function", choices=["intrinsic", "extrinsic", "capture", "visualize_box", "camera_pose", "go_around", "recalculate", "end_effector"], help="Function to execute")
     parser.add_argument("--images_path", type=str, help="Path to the folder containing images")
     parser.add_argument("--display_images", action="store_true", help="Display images while processing")
     parser.add_argument("--output_path", type=str, help="Path to save calibration data")
@@ -51,6 +53,8 @@ def main():
         case "recalculate":
             Recalculate_world_position()
 
+        case "end_effector":
+            estimate_T_ee_g()
 
 def intrinsic_calibration(images_path: str, **kwargs: dict) -> dict:
     """
@@ -274,10 +278,50 @@ def extrinsic_calibration(file_path: str, **kwargs) -> None:
 
 
 
+def estimate_T_ee_g():
+    """
+    Estimate the transformation from EE to Gripper using multiple end-effector poses.
+
+    :param T_b_ee_list: List of 4x4 transformation matrices (base to EE).
+    :return: Estimated 4x4 transformation matrix T_ee_g
+    """
+
+    # Load JSON file
+    with open("image_processing/calibration_data/end_efector_poses.json", "r") as f:
+        data = json.load(f)
+
+    # Extract transformation matrices (camera_in_world)
+    T_b_ee_list = [np.array(entry["camera_in_world"]) for entry in data]
 
 
+    N = len(T_b_ee_list)
+    assert N >= 2, "Need at least two different EE poses."
 
+    # Solve for translation (assuming constant gripper position)
+    A = []
+    b = []
+    
+    for i in range(N - 1):
+        T1 = T_b_ee_list[i]
+        T2 = T_b_ee_list[i + 1]
 
+        R1, t1 = T1[:3, :3], T1[:3, 3]
+        R2, t2 = T2[:3, :3], T2[:3, 3]
+
+        A.append(R1 - R2)
+        b.append(t2 - t1)
+
+    A = np.vstack(A)
+    b = np.hstack(b)
+
+    # Solve for the gripper translation in EE frame
+    t_ee_g = np.linalg.lstsq(A, b, rcond=None)[0]
+
+    # Assume rotation is identity (if small rotation)
+    T_ee_g = np.eye(4)
+    T_ee_g[:3, 3] = t_ee_g
+
+    print("Estimated T_ee_g:\n", T_ee_g)
 
 
 

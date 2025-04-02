@@ -3,13 +3,14 @@ import tkinter as tk
 import time
 from image_processing.basler_camera import BaslerCamera
 from image_processing.realsense_camera import RealSenseCamera
-from communication.client import send_image_to_server
+from communication.client import send_image_to_server, send_for_pose_estimation
 from scipy.spatial.transform import Rotation as R
 import json
 import numpy as np
 import cv2
 import os
 import winsound
+import tkinter.ttk as ttk
 
 
 # Run me with python -m communication.KMR_communication
@@ -64,6 +65,28 @@ def goto_joint(a1, a2, a3, a4, a5, a6, a7, speed=0.2):
     params = {"A1": a1, "A2": a2, "A3": a3, "A4": a4, "A5": a5, "A6": a6, "A7": a7, "speed": speed}
     response = call_endpoint("GotoJoint", params)
     return response
+
+def CloseGripper(force=1):
+    params = {"force": force}
+    call_endpoint("CloseGripper", params)
+
+def OpenGripper():
+    call_endpoint("OpenGripper")
+
+def InitGripper():
+    call_endpoint("InitGripper")
+
+def ReleaseObject():
+    call_endpoint("ReleaseObject")
+
+def GetGripperState():
+    response = call_endpoint("GetGripperState")
+    if response:
+        print("Gripper State:", response.text)
+
+def SetLED(color):
+    params = {"color": color}
+    call_endpoint("SetLED", params)
 
 def get_iiwa_base_in_world(position):
     """ Function for calculating the position of the iiwa base in the world coordinate system.
@@ -187,10 +210,23 @@ def GetCameraInWorld(pose_data, position_data):
     calib_matrix = np.array(extrinsic_data["transformation_matrix"])
     iiwa_base_in_world = get_iiwa_base_in_world([pose_data["x"]*1000, pose_data["y"]*1000, pose_data["theta"]])
 
-    BaseRotation = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+    angle = np.pi/2*3 + pose_data["theta"]
+    if angle > 2 * np.pi:
+        angle -= 2 * np.pi
+    elif angle < 0:
+        angle += 2 * np.pi
+    
+    print("Angle", angle)
+    rotation2D = get_rotation_matrix_2D(angle)
+    print("Rotation2D", rotation2D)
+    BaseRotation = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float)
+    BaseRotation[0:2, 0:2] = rotation2D
+    print("BaseRotation", BaseRotation)
 
     iiwa_base_in_world = np.vstack((np.hstack((BaseRotation, iiwa_base_in_world.reshape(3, 1))), np.zeros((1, 4))))
     iiwa_base_in_world[3, 3] = 1
+
+    print("iiwa_base_in_world: \n", iiwa_base_in_world)
 
     position = np.array([position_data["x"], position_data["y"], position_data["z"]])
 
@@ -205,12 +241,20 @@ def GetCameraInWorld(pose_data, position_data):
 
     return camera_in_world
 
+def ObjectInWorld(camera_in_world, object_in_camera):
+    """ Function for calculating the position of the object in the world coordinate system."
+    """
+    object_in_world = camera_in_world @ object_in_camera
+
+    return object_in_world
 
 
 
 def GetAndSaveImage(**kwargs):
     output_folder = kwargs.get("output_folder", "images/GoAround/")
     do_detection = kwargs.get("do_detection", False)
+    do_6d_estimation = kwargs.get("do_6d_estimation", False)
+    detection_item = kwargs.get("detection_item", "mustard bottle")
 
     time.sleep(2)
     timestamp = int(time.time())
@@ -219,7 +263,7 @@ def GetAndSaveImage(**kwargs):
         camera.save_image(image, f"{output_folder}image_{timestamp}.png")
         if do_detection:
             image_data = ndarray_to_bytes(image)
-            bounding_boxes = send_image_to_server(image_data, "coca cola can")
+            bounding_boxes = send_image_to_server(image_data, detection_item)
             if bounding_boxes:
                 print("\n"*3)
                 print("OBJECT DETECTED!!!")
@@ -228,12 +272,22 @@ def GetAndSaveImage(**kwargs):
                 for (x1, y1, x2, y2) in bounding_boxes:
                     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 camera.save_image(image, f"{output_folder}image_{timestamp}_detected.png")
-
+                if do_6d_estimation:
+                    # Call the 6D estimation function here
+                    pose_result = send_for_pose_estimation(image_data, bounding_boxes[0], detection_item)
+                    if pose_result:
+                        print(f"6D Pose: {pose_result}")
+                    
 
 
 
     pose_response = call_endpoint("GetPose")
     position_response = call_endpoint("GetIIWAposition")
+    joints_response = call_endpoint("GetIIWAJointsPosition")
+    if joints_response:
+        joints_data = joints_response.json()
+        sorted_joints = {key: joints_data[key] for key in sorted(joints_data.keys())}
+        joints_response = sorted_joints
     if pose_response and position_response:
         pose_data = pose_response.json()
         position_data = position_response.json()
@@ -244,8 +298,8 @@ def GetAndSaveImage(**kwargs):
             "image": f"image_{timestamp}.png",
             "pose": pose_data,
             "position": position_data,
+            "joints": joints_response,
             "camera_in_world": camera_in_world.tolist()
-
         }
         try:
             with open(f"{output_folder}data.json", "r") as json_file:
@@ -267,7 +321,7 @@ def GoAroundPositions(**kwargs):
     do_detection = kwargs.get("do_detection", False)
 
     try:
-        with open("image_processing/calibration_data/GoAroundHandPoses.json", "r") as file:
+        with open("image_processing/calibration_data/OneAxisForVitek.json", "r") as file:
             poses_data = json.load(file)
             Poses = [
                 {
@@ -293,6 +347,7 @@ def GoAroundPositions(**kwargs):
         os.makedirs(output_folder)
 
     current_position = GetJointsPosition()
+    time.sleep(1)
 
     if current_position:
         start_distance = sum(abs(Poses[0][joint] - current_position[joint]) for joint in list(Poses[0].keys())[:-1])
@@ -305,6 +360,7 @@ def GoAroundPositions(**kwargs):
     for i, pose in enumerate(Poses):
         print(f"Going to pose {pose['A1'], pose['A2'], pose['A3'], pose['A4'], pose['A5'], pose['A6'], pose['A7']}")
         response = goto_joint(pose["A1"], pose["A2"], pose["A3"], pose["A4"], pose["A5"], pose["A6"], pose["A7"], pose["speed"])
+        time.sleep(0.5)
         if response and response.text.strip() == "OK":
             GetAndSaveImage(output_folder=output_folder, do_detection=do_detection)
 
@@ -424,37 +480,43 @@ def move_to_hand_poses():
 
             print("Starting now!")
             
+
 def create_gui():
     root = tk.Tk()
     root.title("KUKA KMR IIWA Controller")
     root.geometry("600x700")
-    
-    control_frame = tk.Frame(root)
+
+    notebook = ttk.Notebook(root)  # Create a tabbed interface
+    notebook.pack(expand=True, fill="both")
+
+    # Movement Page
+    movement_frame = tk.Frame(notebook)
+    notebook.add(movement_frame, text="Movement")
+
+    control_frame = tk.Frame(movement_frame)
     control_frame.pack(pady=10)
 
-    if camera is None:
-        tk.Label(root, text="Camera not initialized!", fg="red").pack(pady=5)
-    
     tk.Button(control_frame, text="↑", command=lambda: move(0.1, 0, 0)).grid(row=0, column=1)
     tk.Button(control_frame, text="←", command=lambda: move(0, 0.1, 0)).grid(row=1, column=0)
     tk.Button(control_frame, text="→", command=lambda: move(0, -0.1, 0)).grid(row=1, column=2)
     tk.Button(control_frame, text="↓", command=lambda: move(-0.1, 0, 0)).grid(row=2, column=1)
     tk.Button(control_frame, text="↺", command=lambda: move(0, 0, 0.1)).grid(row=1, column=3)
     tk.Button(control_frame, text="↻", command=lambda: move(0, 0, -0.1)).grid(row=1, column=4)
-    
-    action_frame = tk.Frame(root)
-    action_frame.pack(pady=10)
-    
-    tk.Button(action_frame, text="Capture Image", command=lambda: call_endpoint("CaptureImage")).grid(row=0, column=0)
-    tk.Button(action_frame, text="Get Pose", command=lambda: call_endpoint("GetPose")).grid(row=0, column=1)
-    tk.Button(action_frame, text="Honk On", command=lambda: call_endpoint("HonkOn")).grid(row=1, column=0)
-    tk.Button(action_frame, text="Honk Off", command=lambda: call_endpoint("HonkOff")).grid(row=1, column=1)
-    tk.Button(action_frame, text="Get end pose", command=lambda: call_endpoint("GetIIWAposition")).grid(row=2, column=0)
-    tk.Button(action_frame, text="Get joints pose", command=lambda: call_endpoint("GetIIWAJointsPosition")).grid(row=2, column=1)
-    
-    goto_frame = tk.Frame(root)
-    goto_frame.pack(pady=10)
-    
+
+    # Actions Page
+    action_frame = tk.Frame(notebook)
+    notebook.add(action_frame, text="Actions")
+
+    tk.Button(action_frame, text="Capture Image", command=lambda: call_endpoint("CaptureImage")).pack(pady=5)
+    tk.Button(action_frame, text="Get Pose", command=lambda: call_endpoint("GetPose")).pack(pady=5)
+    tk.Button(action_frame, text="Honk On", command=lambda: call_endpoint("HonkOn")).pack(pady=5)
+    tk.Button(action_frame, text="Honk Off", command=lambda: call_endpoint("HonkOff")).pack(pady=5)
+
+    # --- Main Frame for "IIWA Control" ---
+    goto_frame = tk.Frame(notebook)
+    notebook.add(goto_frame, text="IIWA control")
+
+    # === Go To Position Section ===
     labels = ["X", "Y", "Z", "A", "B", "C"]
     entries = []
     for i, label in enumerate(labels):
@@ -462,26 +524,24 @@ def create_gui():
         entry = tk.Entry(goto_frame, width=5)
         entry.grid(row=0, column=i*2+1)
         entries.append(entry)
-    
-    degree_mode_position = tk.BooleanVar(value=True)  # True for degrees, False for radians
+
+    degree_mode_position = tk.BooleanVar(value=True)
+    tk.Checkbutton(goto_frame, text="Degrees", variable=degree_mode_position).grid(row=0, column=13)
 
     def convert_abc_to_radians_if_needed(a, b, c):
-        if degree_mode_position.get():
-            return np.deg2rad(a), np.deg2rad(b), np.deg2rad(c)
-        return a, b, c
-
-    tk.Checkbutton(goto_frame, text="Degrees", variable=degree_mode_position).grid(row=0, column=13)
+        return (np.deg2rad(a), np.deg2rad(b), np.deg2rad(c)) if degree_mode_position.get() else (a, b, c)
 
     tk.Button(goto_frame, text="Go To Position", command=lambda: goto_position(
         float(entries[0].get()), float(entries[1].get()), float(entries[2].get()),
         *convert_abc_to_radians_if_needed(
             float(entries[3].get()), float(entries[4].get()), float(entries[5].get())
         )
-    )).grid(row=0, column=12)
-    
-    joint_frame = tk.Frame(root)
-    joint_frame.pack(pady=10)
-    
+    )).grid(row=0, column=12, pady=5)
+
+    # === Go To Joint Position Section ===
+    joint_frame = tk.Frame(goto_frame)
+    joint_frame.grid(row=1, column=0, columnspan=14, pady=10)
+
     joint_labels = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]
     joint_entries = []
     for i, label in enumerate(joint_labels):
@@ -489,51 +549,57 @@ def create_gui():
         entry = tk.Entry(joint_frame, width=5)
         entry.grid(row=0, column=i*2+1)
         joint_entries.append(entry)
-    
-    degree_mode = tk.BooleanVar(value=True)  # True for degrees, False for radians
+
+    degree_mode = tk.BooleanVar(value=True)
+    tk.Checkbutton(joint_frame, text="Degrees", variable=degree_mode).grid(row=1, column=14)
 
     def convert_to_radians_if_needed(value):
         return np.deg2rad(value) if degree_mode.get() else value
 
-    tk.Checkbutton(joint_frame, text="Degrees", variable=degree_mode).grid(row=1, column=14)
-
     tk.Button(joint_frame, text="Go To Joint Position", command=lambda: goto_joint(
-        convert_to_radians_if_needed(float(joint_entries[0].get())),
-        convert_to_radians_if_needed(float(joint_entries[1].get())),
-        convert_to_radians_if_needed(float(joint_entries[2].get())),
-        convert_to_radians_if_needed(float(joint_entries[3].get())),
-        convert_to_radians_if_needed(float(joint_entries[4].get())),
-        convert_to_radians_if_needed(float(joint_entries[5].get())),
-        convert_to_radians_if_needed(float(joint_entries[6].get()))
-    )).grid(row=0, column=14)
-    
-    tk.Button(root, text="Go Around", command=lambda: GoAroundRepeat()).pack(pady=5)
-    tk.Button(root, text="Go Around Positions", command=lambda: GoAroundPositions()).pack(pady=5)
-    # tk.Button(root, text="Go Home", command=lambda: go_home()).pack(pady=5)
-    
-    move_to_location_frame = tk.Frame(root)
-    move_to_location_frame.pack(pady=10)
-    
-    tk.Label(move_to_location_frame, text="Target Number:").pack(side=tk.LEFT)
-    target_number_entry = tk.Entry(move_to_location_frame, width=5)
-    target_number_entry.pack(side=tk.LEFT)
-    
-    tk.Button(move_to_location_frame, text="MoveToLocation", command=lambda: MoveToLocation(int(target_number_entry.get()))).pack(side=tk.LEFT)
-    tk.Button(root, text="Execute sequence", command=lambda: ExecuteSequence()).pack(pady=5)
-    
-    adjust_frame = tk.Frame(root)
-    adjust_frame.pack(pady=10)
-    
-    joint_labels = ["A1", "A2", "A3", "A4", "A5", "A6", "A7"]
+        *[convert_to_radians_if_needed(float(entry.get())) for entry in joint_entries]
+    )).grid(row=0, column=14, pady=5)
+
+    # === Joint Control Section ===
+    joint_control_frame = tk.Frame(goto_frame)
+    joint_control_frame.grid(row=2, column=0, columnspan=14, pady=10)
+
+    tk.Label(joint_control_frame, text="Joint Control").grid(row=0, column=0, columnspan=14, pady=5)
+
     for i, label in enumerate(joint_labels):
-        tk.Label(adjust_frame, text=label+":").grid(row=i, column=0)
-        tk.Button(adjust_frame, text="+", command=lambda l=label: adjust_joint(l, 1*np.pi/180)).grid(row=i, column=1)
-        tk.Button(adjust_frame, text="-", command=lambda l=label: adjust_joint(l, -1*np.pi/180)).grid(row=i, column=2)
-    
+        tk.Label(joint_control_frame, text=label+":").grid(row=i+1, column=0, padx=5, pady=5)
+        tk.Button(joint_control_frame, text="+", command=lambda l=label: adjust_joint(l, 1*np.pi/180)).grid(row=i+1, column=1, padx=5, pady=5)
+        tk.Button(joint_control_frame, text="-", command=lambda l=label: adjust_joint(l, -1*np.pi/180)).grid(row=i+1, column=2, padx=5, pady=5)
 
-    tk.Button(root, text="Move to Hand Poses", command=move_to_hand_poses).pack(pady=5)
 
-    tk.Button(root, text="Get Joints Write to File", command=Get_joints_Write_to_file).pack(pady=5)
+    # Other Actions Page
+    other_frame = tk.Frame(notebook)
+    notebook.add(other_frame, text="Other")
+
+    tk.Button(other_frame, text="Go Around", command=lambda: GoAroundRepeat()).pack(pady=5)
+    tk.Button(other_frame, text="Go Around Positions", command=lambda: GoAroundPositions()).pack(pady=5)
+    tk.Button(other_frame, text="Execute sequence", command=lambda: ExecuteSequence()).pack(pady=5)
+    tk.Button(other_frame, text="Move to Hand Poses", command=move_to_hand_poses).pack(pady=5)
+    tk.Button(other_frame, text="Get Joints Write to File", command=Get_joints_Write_to_file).pack(pady=5)
+
+
+
+    # Gripper Control Page
+    gripper_frame = tk.Frame(notebook)
+    notebook.add(gripper_frame, text="Gripper Control")
+
+    tk.Button(gripper_frame, text="Close Gripper", command=lambda: CloseGripper(force=1)).pack(pady=5)
+    tk.Button(gripper_frame, text="Open Gripper", command=OpenGripper).pack(pady=5)
+    tk.Button(gripper_frame, text="Initialize Gripper", command=InitGripper).pack(pady=5)
+    tk.Button(gripper_frame, text="Release Object", command=ReleaseObject).pack(pady=5)
+    tk.Button(gripper_frame, text="Get Gripper State", command=GetGripperState).pack(pady=5)
+
+    led_frame = tk.Frame(gripper_frame)
+    led_frame.pack(pady=5)
+    tk.Label(led_frame, text="Set LED Color:").pack(pady=5)
+    tk.Button(led_frame, text="Red", command=lambda: SetLED("red")).pack(side=tk.LEFT, padx=5)
+    tk.Button(led_frame, text="Green", command=lambda: SetLED("green")).pack(side=tk.LEFT, padx=5)
+    tk.Button(led_frame, text="Blue", command=lambda: SetLED("blue")).pack(side=tk.LEFT, padx=5)
 
 
     root.mainloop()
@@ -544,25 +610,126 @@ def ndarray_to_bytes(image: np.ndarray, format: str = ".png") -> bytes:
     _, buffer = cv2.imencode(format, image)
     return buffer.tobytes()
 
+
+def JustPickIt():
+    # Load pose data from the specified JSON file
+    pose_file_path = "images/JustPickIt/pose.json"
+    try:
+        with open(pose_file_path, "r") as file:
+            pose_data = json.load(file)
+            object_in_camera = np.array(pose_data["camera_pose"])
+            print("Loaded object pose from file:", object_in_camera)
+    except FileNotFoundError:
+        print(f"File not found: {pose_file_path}")
+        return
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON from file: {pose_file_path}")
+        return
+    
+    pose_response = call_endpoint("GetPose")
+    position_response = call_endpoint("GetIIWAposition")
+    pose_data = pose_response.json()
+    position_data = position_response.json()
+
+    object_in_camera[:3, 3] = object_in_camera[:3, 3] * 1000
+    camera_in_word = GetCameraInWorld(pose_data, position_data)
+
+    object_in_world = ObjectInWorld(camera_in_word, object_in_camera)
+    
+    print("Object in camera:\n", object_in_camera)
+    print("Camera in world:\n", camera_in_word)
+    print("Object in world:\n", object_in_world)
+
+    # Save object_in_world and camera_pose back to the JSON file
+    save_data = {
+        "camera_pose": object_in_camera.tolist(),
+        "object_in_world": object_in_world.tolist()
+    }
+
+    output_folder = "images/JustPickIt/"
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    output_file_path = os.path.join(output_folder, "pose.json")
+    with open(output_file_path, "w") as file:
+        json.dump(save_data, file, indent=4)
+
+    print(f"Saved updated pose data to {output_file_path}")
+
+def JustPickIt2():
+    # Load pose data from the specified JSON file
+    pose_file_path = "images/JustPickIt/pose.json"
+    try:
+        with open(pose_file_path, "r") as file:
+            pose_data = json.load(file)
+            object_in_camera = np.array(pose_data["camera_pose"])
+            print("Loaded object pose from file:", object_in_camera)
+    except FileNotFoundError:
+        print(f"File not found: {pose_file_path}")
+        return
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON from file: {pose_file_path}")
+        return
+
+    object_in_world = np.array(pose_data["object_in_world"])
+    joints = call_endpoint("GetIIWAJointsPosition")
+    joints = joints.json()
+    pose_response = call_endpoint("GetPose")
+    position_response = call_endpoint("GetIIWAposition")
+    pose_data = pose_response.json()
+    position_data = position_response.json()
+    camera_in_word = GetCameraInWorld(pose_data, position_data)
+
+    iiwa_base_in_world = get_iiwa_base_in_world([pose_data["x"]*1000, pose_data["y"]*1000, pose_data["theta"]])
+    object_iiwa_angle = np.arctan2(object_in_world[1, 3] - iiwa_base_in_world[1], object_in_world[0, 3] - iiwa_base_in_world[0])
+    camera_iiwa_angle = np.arctan2(camera_in_word[1, 3] - iiwa_base_in_world[1], camera_in_word[0, 3] - iiwa_base_in_world[0])
+    joint_A1_KMR_angle = joints["A1"] + pose_data["theta"]
+    A1_in_world = np.array([np.cos(joint_A1_KMR_angle), np.sin(joint_A1_KMR_angle)])
+    
+    print("Object IIWA angle in world:", object_iiwa_angle)
+    print("Camera IIWA angle in world:", camera_iiwa_angle)
+    print("Joint A1 angle:", joints["A1"])
+
+
+    angle = np.pi/2 + pose_data["theta"] + joints["A1"]
+    
+    if angle > 2 * np.pi:
+        angle -= 2 * np.pi
+    elif angle > np.pi:
+        angle -= 2 * np.pi
+
+
+
+    print("A1 world angle:", angle)
+    print("Needed rotation:", object_iiwa_angle - angle)
+    print(joints["A1"] + (object_iiwa_angle - angle))
+    final_angle = object_iiwa_angle - pose_data["theta"] - np.pi/2
+    while final_angle > np.pi:
+        final_angle -= 2 * np.pi
+    while final_angle < -np.pi:
+        final_angle += 2 * np.pi
+
+    if final_angle > 170*np.pi/180:
+        final_angle = 169*np.pi/180
+    elif final_angle < -170*np.pi/180:
+        final_angle = -169*np.pi/180
+
+
+
+    # Calculate the new joint positions with the updated A1 angle
+    new_A1_angle = final_angle
+    goto_joint(new_A1_angle, joints["A2"], joints["A3"], joints["A4"], joints["A5"], joints["A6"], joints["A7"], speed=0.3)
+
+
+
 if __name__ == "__main__":
-    create_gui()
+    np.set_printoptions(suppress=True)
 
-    # np.set_printoptions(suppress=True)
-    # pose_response = call_endpoint("GetPose")
-    # position_response = call_endpoint("GetIIWAposition")
-    # if pose_response and position_response:
-    #     pose_data = {}
-    #     try:
-    #         pose_text = pose_response.text.strip()
-    #         pose_parts = pose_text.split()
-    #         for part in pose_parts:
-    #             key, value = part.split(":")
-    #             pose_data[key] = float(value)
-    #     except Exception as e:
-    #         print("Failed to parse pose data:", e)
+    while True:
+        JustPickIt2()
+        time.sleep(5)
 
-    #     position_data = position_response.json()
 
-    #     camera_in_world = GetCameraInWorld(pose_data, position_data)
-    #     print("Camera in World Coordinate System:")
-    #     print(camera_in_world)
+    # JustPickIt()
+    # create_gui()
+
