@@ -6,9 +6,9 @@ import numpy as np
 SERVER_URL_DETECTION = "http://localhost:5000/process"
 SERVER_URL_POSE = "http://localhost:5000/estimate_pose"
 
-INPUT_FOLDER = "images/LegoBrickTest/"
-OUTPUT_FOLDER = "images/LegoBrickTest/output/"
-PROMPT = "White lego brick"
+INPUT_FOLDER = "images/JustPickIt/"
+OUTPUT_FOLDER = "images/JustPickIt/output/"
+PROMPT = "foam brick"
 
 # Run me with python -m communication.client
 

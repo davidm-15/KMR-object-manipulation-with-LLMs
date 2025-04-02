@@ -23,6 +23,10 @@ Inference/*
 image_processing/calibration_data/*
 !image_processing/calibration_data/*.json
 
+!KMRcode/
+KMRcode/*
+!KMRcode/*.java
+
 # Ignore all files named .DS_Store or ending with .log
 **/.DS_Store
 **.log
