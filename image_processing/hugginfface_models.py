@@ -13,10 +13,22 @@ from transformers import OmDetTurboForObjectDetection
 from PIL import Image, ImageDraw
 import os
 
+# Run me with python -m image_processing.hugginfface_models
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 device = "cuda"
+
+
+def lisa():
+    model_id = "xinlai/LISA-13B-llama2-v1"
+    device = "cuda"
+
+    config = AutoConfig.from_pretrained(model_id)
+    print(config)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype="auto", device_map="auto").to(device)
 
 def main():
     input_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/MustardBottle/inputs"
@@ -324,6 +336,7 @@ def glamm():
 
 
 if __name__ == "__main__":
-    main()
-
+    lisa()
+    # main()
     # QWEN()
+    pass

@@ -17,7 +17,10 @@ from PIL import ImageDraw
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# python -m groma.eval.run_groma     --model-name {weights}     --image-file {../KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects/banana/image_rgb.png}     --query {banana}
+# python -m groma.eval.run_groma     --model-name FoundationVision/groma-7b-finetune     --image-file ../KMR-object-manipulation-with-LLMs/images/ScannedObjects/ScannedObjects/Stationary/ScanObjects_5/image_1743174825.png     --query "mustard bottle"
+
+# CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6  python -m groma.eval.run_groma     --model-name FoundationVision/groma-7b-finetune     --image-file ../KMR-object-manipulation-with-LLMs/images/ScannedObjects/ScannedObjects/Stationary/ScanObjects_5/image_1743174825.png     --query "mustard bottle"
+
 class MegaPoseHandler:
     def __init__(self, device, path):
         self.device = device

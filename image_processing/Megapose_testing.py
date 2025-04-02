@@ -17,21 +17,24 @@ from communication.server import process_image, estimate_pose, initialize_handle
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from PIL import Image
 
+from transformers import AutoConfig
+
 # run me with python -m image_processing.Megapose_testing
 
 def main():
-    model_handler, pose_handler, depth_handler = initialize_handlers("glamm")
-    image_file = "images/ScannedObjects/ScannedObjects/Stationary/ScanObjects_5/image_1743174825.png"
-    prompt = "mustard-bottle"
+    model_handler, pose_handler, depth_handler = initialize_handlers("grounding_dino")
+    image_file = "images/JustPickIt/img.png"
+    prompt = "foam brick"
+
     detection_result = process_image(model_handler, image_file, prompt)
     print("Result:", detection_result)
 
     image = Image.open(image_file).convert("RGB")
     depth_estimation_result = depth_handler.estimate_depth(image)
     estimate_pose_result = estimate_pose(pose_handler, image_file, prompt, detection_result["bounding_boxes"][0], DoVis=True, Depth=depth_estimation_result)
-    
 
-    # print("Pose Result:", estimate_pose_result)
+
+    print("Pose Result:", estimate_pose_result)
 
 
 def test_megapose():

@@ -15,6 +15,9 @@ from PIL import Image
 
 logging.basicConfig(level=logging.INFO)
 
+# Run me with python -m communication.server glamm
+# Run me with python -m communication.server rexseek 
+
 MODEL_CLASSES = {
     "glamm": GLAMMHandler,
     "rexseek": RexSeekHandler,
@@ -42,7 +45,7 @@ def process_image(model_handler, image_file, prompt):
 
 def estimate_pose(pose_handler, image_file, object_name, bbox, **kwargs):
     """Perform 6D pose estimation."""
-
+    print("Received request for pose estimation")
     DoVis = kwargs.get("DoVis", False)
 
     try:
@@ -61,7 +64,7 @@ def estimate_pose(pose_handler, image_file, object_name, bbox, **kwargs):
 def create_app(model_name):
     """Create Flask app with given model."""
     app = Flask(__name__)
-    model_handler, pose_handler = initialize_handlers(model_name)
+    model_handler, pose_handler, depth_handler = initialize_handlers(model_name)
 
     @app.route("/process", methods=["POST"])
     def process_image_route():
@@ -77,9 +80,13 @@ def create_app(model_name):
         """6D pose estimation via Flask."""
         if "image" not in request.files or "object_name" not in request.form or "bbox" not in request.form:
             return jsonify({"error": "Missing image, object_name, or bbox"}), 400
+        
+        print("Received request for pose estimation")
         image_file = request.files["image"]
         object_name = request.form["object_name"]
         bbox = json.loads(request.form["bbox"])
+        print("Received bbox:", bbox)
+        
         return jsonify(estimate_pose(pose_handler, image_file, object_name, bbox))
 
     return app
