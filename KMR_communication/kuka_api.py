@@ -1,6 +1,6 @@
 # kuka_api.py
 import requests
-import config  # Import the configuration
+from . import config  # Import the configuration
 
 def call_endpoint(endpoint: str, params: dict = None, method: str = "GET") -> requests.Response | None:
     """

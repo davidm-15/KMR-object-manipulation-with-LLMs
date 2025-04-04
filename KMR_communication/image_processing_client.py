@@ -1,8 +1,8 @@
 # image_processing_client.py
 import requests
 import numpy as np
-import config
-import utils # For ndarray_to_bytes
+from . import config
+from . import utils # For ndarray_to_bytes
 
 # Placeholder implementations: Replace with your actual client code
 # This might involve sending HTTP requests, using gRPC, ROS topics, etc.

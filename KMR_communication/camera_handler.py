@@ -1,9 +1,32 @@
 # camera_handler.py
-from image_processing.basler_camera import BaslerCamera
 # from image_processing.realsense_camera import RealSenseCamera # Keep if needed
 import numpy as np
 import os
 import time
+import sys
+
+try:
+    # This assumes image_processing is a sibling directory to KMR_communication
+    from image_processing.basler_camera import BaslerCamera
+    # from image_processing.realsense_camera import RealSenseCamera # If needed
+except ModuleNotFoundError:
+    print("Could not find camera modules in standard location.")
+    # Try adding the parent directory (project root) to sys.path
+    # This makes imports like 'image_processing.basler_camera' work
+    _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _PROJECT_ROOT not in sys.path:
+        print(f"Adding project root to sys.path: {_PROJECT_ROOT}")
+        sys.path.insert(0, _PROJECT_ROOT) # Insert at beginning
+
+    # Retry the import
+    try:
+         from image_processing.basler_camera import BaslerCamera
+         # from image_processing.realsense_camera import RealSenseCamera
+    except ModuleNotFoundError as e:
+         print(f"ERROR: Still could not find camera modules after path adjustment: {e}")
+         # Define dummy classes or raise the error, depending on desired behavior
+         BaslerCamera = None # Or raise ImportError("BaslerCamera not found")
+
 
 class CameraHandler:
     def __init__(self, camera_type='basler'):

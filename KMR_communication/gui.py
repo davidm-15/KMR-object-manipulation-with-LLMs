@@ -1,10 +1,12 @@
-# gui.py
 import tkinter as tk
 import tkinter.ttk as ttk
 import numpy as np
-import config
-import kuka_api as api # Use 'api' as shorthand
-import sequences # Import sequences module if GUI buttons trigger them
+
+# --- Use Relative Imports ---
+from . import config
+from . import kuka_api as api
+from . import sequences # If GUI calls sequence functions
+
 
 def adjust_joint(joint_label: str, delta_deg: float):
     """Gets current joints, calculates new position, and moves the joint."""
@@ -159,7 +161,12 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
     ttk.Button(grip_buttons_frame, text="Initialize Gripper", command=api.init_gripper).pack(side=tk.LEFT, padx=5, pady=5)
     ttk.Button(grip_buttons_frame, text="Open Gripper", command=api.open_gripper).pack(side=tk.LEFT, padx=5, pady=5)
     ttk.Button(grip_buttons_frame, text="Close Gripper", command=lambda: api.close_gripper(force=1)).pack(side=tk.LEFT, padx=5, pady=5)
-    # ttk.Button(gripper_frame, text="Release Object", command=api.release_object).pack(pady=5) # Less common?
+
+    # --- ADD THIS LINE ---
+    ttk.Button(grip_buttons_frame, text="Release Object", command=api.release_object).pack(side=tk.LEFT, padx=5, pady=5)
+    # ------ END ADDITION ------
+
+    # The Get Gripper State button is currently outside the frame, keep it there or move if desired
     ttk.Button(gripper_frame, text="Get Gripper State", command=api.get_gripper_state).pack(pady=5)
 
     ttk.Separator(gripper_frame, orient='horizontal').pack(fill='x', pady=15)
@@ -171,7 +178,6 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
     ttk.Button(led_frame, text="Red", command=lambda: api.set_led("red")).pack(side=tk.LEFT, padx=5)
     ttk.Button(led_frame, text="Green", command=lambda: api.set_led("green")).pack(side=tk.LEFT, padx=5)
     ttk.Button(led_frame, text="Blue", command=lambda: api.set_led("blue")).pack(side=tk.LEFT, padx=5)
-    ttk.Button(led_frame, text="Off", command=lambda: api.set_led("off")).pack(side=tk.LEFT, padx=5) # Assuming 'off' works
 
     # --- Sequences/Actions Page ---
     seq_frame = ttk.Frame(notebook, padding="10")

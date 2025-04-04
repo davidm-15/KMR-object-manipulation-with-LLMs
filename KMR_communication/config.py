@@ -19,7 +19,7 @@ IIWA_BASE_Z_OFFSET = 700 # Height of IIWA base from the floor/world origin Z
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Go up one level if config.py is inside a 'communication' subdirectory
 # _PROJECT_ROOT = os.path.dirname(_BASE_DIR) # Adjust if needed
-_PROJECT_ROOT = _BASE_DIR # Assuming config.py is at the top level or adjust relative paths below
+_PROJECT_ROOT = os.path.abspath(os.path.join(_BASE_DIR, os.pardir)) # Setting the project root to the parent directory of KMR_communication
 
 IMAGE_PROCESSING_DIR = os.path.join(_PROJECT_ROOT, "image_processing")
 COMMUNICATION_DIR = os.path.join(_PROJECT_ROOT, "communication") # If this structure exists

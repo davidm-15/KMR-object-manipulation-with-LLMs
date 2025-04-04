@@ -4,7 +4,8 @@ import numpy as np
 import cv2
 import os
 from scipy.spatial.transform import Rotation as R
-import config  # Import the configuration
+from . import config # 
+
 
 def load_json_data(filepath: str) -> list | dict:
     """Loads data from a JSON file, handling file not found and decode errors."""

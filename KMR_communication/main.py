@@ -4,12 +4,13 @@ import time
 import argparse
 
 # Import modules
-import config
-import kuka_api as api
-import utils
-from camera_handler import CameraHandler
-import sequences
-import gui
+from . import config
+from . import kuka_api as api
+from . import utils
+# Assuming camera_handler.py is directly inside KMR_communication
+from .camera_handler import CameraHandler
+from . import sequences
+from . import gui
 
 def main():
     # Set numpy print options

@@ -6,11 +6,11 @@ import cv2
 import os
 import winsound
 
-import config
-import kuka_api as api # Use 'api' as shorthand for kuka_api
-import utils
-from camera_handler import CameraHandler # Assuming CameraHandler manages the camera object
-import image_processing_client as ipc # Image processing client functions
+from . import config
+from . import kuka_api as api
+from . import utils
+from .camera_handler import CameraHandler # If used directly
+from . import image_processing_client as ipc
 
 def get_current_state_data(camera_handler: CameraHandler, image_filename_base: str) -> dict | None:
     """Captures image, gets robot state, and prepares data dict for saving."""
@@ -566,14 +566,16 @@ def just_pick_it_step2_align_A1(T_world_obj: np.ndarray):
 
 
 def just_pick_it_full_sequence(camera_handler: CameraHandler):
-     """Runs the two steps of the JustPickIt sequence."""
-     # Step 1: Calculate object pose in world from estimated camera pose
-     T_world_obj = just_pick_it_step1_calculate_world_pose(camera_handler)
+    """Runs the two steps of the JustPickIt sequence."""
+    # Step 1: Calculate object pose in world from estimated camera pose
+    T_world_obj = just_pick_it_step1_calculate_world_pose(camera_handler)
 
-     if T_world_obj is not None:
-         # Add a delay or check before starting step 2
-         time.sleep(2)
-         # Step 2: Align A1 joint towards the calculated object pose
-         just_pick_it_step2_align_A1(T_world_obj)
-     else:
-         print("JustPickIt sequence failed at Step 1.")
+    print("JustPickIt Step 1 completed. T_world_obj:", T_world_obj)
+
+    if T_world_obj is not None:
+        # Add a delay or check before starting step 2
+        time.sleep(2)
+        # Step 2: Align A1 joint towards the calculated object pose
+        just_pick_it_step2_align_A1(T_world_obj)
+    else:
+        print("JustPickIt sequence failed at Step 1.")
