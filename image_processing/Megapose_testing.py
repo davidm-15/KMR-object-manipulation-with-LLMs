@@ -18,23 +18,83 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from PIL import Image
 
 from transformers import AutoConfig
+import logging
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent # Go up one level
+if str(PROJECT_ROOT) not in sys.path:
+    print(f"Adding project root to sys.path: {PROJECT_ROOT}")
+    sys.path.append(str(PROJECT_ROOT))
+# --- ---
+
+try:
+    # Import the functions needed
+    from communication.server import initialize_handlers, process_image, estimate_pose_via_subprocess
+except ImportError as e:
+    print(f"Failed to import from communication.server: {e}")
+    print("Check sys.path and ensure server.py is accessible.")
+    sys.exit(1)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 # run me with python -m image_processing.Megapose_testing
 
 def main():
-    model_handler = initialize_handlers("glamm")
-    image_file = "images/JustPickIt/img.png"
-    prompt = "foam brick"
+    logging.info("Initializing object detector...")
+    # Initialize only the detection model handler (e.g., glamm, grounding_dino)
+    # initialize_handlers now only returns this one handler.
+    model_handler = initialize_handlers("glamm") # Or whichever detector you use
+    logging.info("Object detector initialized.")
 
-    detection_result = process_image(model_handler, image_file, prompt)
-    print("Result:", detection_result)
+    # Define image path and prompt
+    image_file = "images/JustPickIt/img.png" # Make sure this path is correct relative to where you run the script
+    prompt = "plug-in outlet expander" # This will be used for detection AND as the object_name for pose
 
-    image = Image.open(image_file).convert("RGB")
+    image_path = Path(image_file)
+    if not image_path.is_file():
+        logging.error(f"Input image file not found: {image_path.resolve()}")
+        return
 
-    estimate_pose_result = estimate_pose(pose_handler, image_file, prompt, detection_result["bounding_boxes"][0], DoVis=True)
+    logging.info(f"Running object detection for '{prompt}' on {image_path}...")
+    # Run object detection - process_image expects a path string
+    detection_result = process_image(model_handler, str(image_path), prompt)
 
+    # Check detection results
+    if not detection_result or "bounding_boxes" not in detection_result or not detection_result["bounding_boxes"]:
+        logging.error(f"Object detection failed or found no objects for '{prompt}'. Result: {detection_result}")
+        return
+    logging.info(f"Detection result: {detection_result}")
 
-    print("Pose Result:", estimate_pose_result)
+    # Get the first bounding box
+    bbox = detection_result["bounding_boxes"][0]
+    logging.info(f"Using bounding box: {bbox}")
+
+    # --- Call the subprocess-based pose estimation ---
+    logging.info(f"Running pose estimation for '{prompt}' via subprocess...")
+    # Pass the image *path* (as string) directly to the modified function
+    # Pass visualize=True instead of DoVis=True
+    estimate_pose_result = estimate_pose_via_subprocess(
+        image_input=str(image_path), # Pass the string path
+        object_name=prompt,          # Use the prompt as object name
+        bbox=bbox,
+        visualize=True               # Use 'visualize' argument
+    )
+    # --- ---
+
+    logging.info("Pose estimation subprocess finished.")
+    print("-------------------------------------")
+    print("Final Pose Result from subprocess:")
+    # Pretty print the JSON result if possible
+    import json
+    try:
+        print(json.dumps(estimate_pose_result, indent=4))
+    except Exception:
+        print(estimate_pose_result) # Print as is if JSON fails
+    print("-------------------------------------")
+
 
 
 def test_megapose():

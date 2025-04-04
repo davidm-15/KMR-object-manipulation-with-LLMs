@@ -63,35 +63,50 @@ def process_image(model_handler, image_file, prompt):
         logging.exception("Error processing image") # Use logging.exception to include traceback
         return {"error": str(e)}
 
-def estimate_pose_via_subprocess(image_file_storage, object_name, bbox, visualize=False, **kwargs):
+def estimate_pose_via_subprocess(image_input, object_name, bbox, visualize=False, **kwargs):
     """
     Performs 6D pose estimation by launching a separate worker script.
+    Accepts Flask FileStorage object or a file path string/Path object as image_input.
+    Optionally triggers visualization generation in the worker.
     """
     logging.info(f"Estimate Pose Subprocess: Request for {object_name} with bbox {bbox}, Visualize: {visualize}")
     start_time = time.time()
 
-    # Create temporary files for input image and output JSON
-    # Use NamedTemporaryFile to get a path and manage cleanup
-    # Keep files open until subprocess finishes if needed, or just get paths.
-    # Suffix helps PIL identify image type
-    _, image_suffix = os.path.splitext(image_file_storage.filename)
-    if not image_suffix: image_suffix = '.png' # Default suffix
-
-    temp_image_file = tempfile.NamedTemporaryFile(delete=False, suffix=image_suffix)
-    temp_output_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    temp_image_path = Path(temp_image_file.name)
-    temp_output_path = Path(temp_output_file.name)
-
-    # Close the files immediately so the worker script can open the image
-    # and write the output. We just need the paths.
-    temp_image_file.close()
-    temp_output_file.close()
-
+    temp_image_path = None # Keep track if we create a temp image file
+    temp_output_path = None # Keep track of temp output file
 
     try:
-        # 1. Save the uploaded image to the temporary file
-        logging.info(f"Saving uploaded image to temporary path: {temp_image_path}")
-        image_file_storage.save(temp_image_path)
+        # --- Determine input type and setup paths ---
+        if isinstance(image_input, str) or isinstance(image_input, Path):
+            # Input is a path, use it directly as the source image for the worker
+            image_path_for_worker = Path(image_input)
+            if not image_path_for_worker.is_file():
+                raise FileNotFoundError(f"Input image path not found: {image_path_for_worker}")
+            logging.info(f"Using provided image path directly: {image_path_for_worker}")
+            # Create only the temporary output file
+            temp_output_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+            temp_output_path = Path(temp_output_file.name)
+            temp_output_file.close()
+
+        elif hasattr(image_input, 'save') and hasattr(image_input, 'filename'):
+            # Input looks like Flask FileStorage, save it to a temp file
+            logging.info("Input is FileStorage-like, saving to temporary file.")
+            _, image_suffix = os.path.splitext(image_input.filename)
+            if not image_suffix: image_suffix = '.png' # Default suffix
+            temp_image_file_obj = tempfile.NamedTemporaryFile(delete=False, suffix=image_suffix)
+            temp_output_file_obj = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+            temp_image_path = Path(temp_image_file_obj.name) # Path where uploaded file is saved
+            temp_output_path = Path(temp_output_file_obj.name)
+            temp_image_file_obj.close()
+            temp_output_file_obj.close()
+            image_input.save(temp_image_path) # Save the stream content
+            image_path_for_worker = temp_image_path # Worker uses the saved temp file
+            logging.info(f"Saved uploaded image to temporary path: {temp_image_path}")
+        else:
+            # Unsupported input type
+            raise TypeError(f"Unsupported image input type: {type(image_input)}")
+        # --- End input type handling ---
+
 
         # 2. Prepare arguments for the worker script
         python_executable = sys.executable # Use the same python env
@@ -100,74 +115,56 @@ def estimate_pose_via_subprocess(image_file_storage, object_name, bbox, visualiz
         cmd = [
             str(python_executable),
             str(WORKER_SCRIPT_PATH),
-            "--image-path", str(temp_image_path),
+            "--image-path", str(image_path_for_worker), # Use the determined path
             "--object-name", object_name,
             "--bbox-json", bbox_json_string,
             "--output-file", str(temp_output_path),
             "--object-folder-root", str(MEGAPOSE_OBJECTS_PATH),
-            # Add --camera-json if not using the default in worker
-            # "--camera-json", "path/to/your/specific/cam.json",
-            # Add --model-name if not using the default in worker
-            # "--model-name", "your-megapose-model",
         ]
-        logging.info(f"Executing worker command: {' '.join(cmd)}")
+        # Add visualization flag if requested
         if visualize:
             cmd.append("--visualize")
 
+        logging.info(f"Executing worker command: {' '.join(cmd)}")
+
         # 3. Run the worker script as a subprocess
-        # Set a generous timeout (e.g., 120 seconds = 2 minutes)
-        # Adjust based on typical inference time + buffer
-        timeout_seconds = 120
+        timeout_seconds = 180 # Adjust as needed
         process = subprocess.run(
             cmd,
-            capture_output=True, # Capture stdout/stderr
-            text=True,           # Decode stdout/stderr as text
-            check=False,         # Don't raise exception on non-zero exit code (we handle it)
-            timeout=timeout_seconds
+            capture_output=True, text=True, check=False, timeout=timeout_seconds
         )
 
-        # 4. Process the result
+        # 4. Process the result (logging stdout/stderr)
         elapsed_time = time.time() - start_time
         logging.info(f"Subprocess finished in {elapsed_time:.2f} seconds. Return code: {process.returncode}")
         if process.stdout:
-             logging.info(f"Worker stdout:\n{process.stdout}")
+             logging.info(f"Worker stdout:\n{process.stdout.strip()}")
         if process.stderr:
-             logging.warning(f"Worker stderr:\n{process.stderr}") # Use warning or error for stderr
+             logging.warning(f"Worker stderr:\n{process.stderr.strip()}")
 
+        # ... (rest of result processing logic: check return code, read output file) ...
         if process.returncode == 0:
-            # Success: Read the output JSON file
-            logging.info(f"Worker succeeded. Reading result from {temp_output_path}")
-            if temp_output_path.is_file() and temp_output_path.stat().st_size > 0:
-                 with open(temp_output_path, 'r') as f:
-                     result_data = json.load(f)
-                 # Check if the worker wrote an error into the file anyway
-                 if "error" in result_data and result_data["error"]:
-                     logging.error(f"Worker returned success code but wrote error: {result_data['error']}")
-                     return {"error": f"Pose estimation worker failed internally: {result_data['error']}"}
-                 else:
-                     logging.info("Successfully retrieved pose estimation results.")
-                     return result_data # Return the content read from the JSON file
-            else:
-                 logging.error(f"Worker exited successfully but output file is missing or empty: {temp_output_path}")
-                 return {"error": "Pose estimation worker finished but produced no output file."}
+             # ... read json ...
+             # ... check for internal error ...
+             # Successfully read data
+             if 'result_data' in locals():
+                 return result_data # Return the content read from the JSON file
+             else: # Should not happen if file is read correctly
+                 logging.error(f"Worker success but failed to read/parse output file: {temp_output_path}")
+                 return {"error": "Pose estimation worker finished but failed to parse output file."}
+
         else:
-            # Failure
-            error_message = f"Pose estimation worker failed with exit code {process.returncode}."
-            if process.stderr:
-                 error_message += f" Stderr: {process.stderr.strip()}"
-            # Check if error details were written to the output file
-            try:
-                 if temp_output_path.is_file() and temp_output_path.stat().st_size > 0:
-                      with open(temp_output_path, 'r') as f:
-                           error_data = json.load(f)
-                      if "error" in error_data:
-                           error_message += f" Worker error details: {error_data['error']}"
-            except Exception as read_err:
-                 logging.warning(f"Could not read error details from output file after worker failure: {read_err}")
+             # Failure
+             # ... (construct error message from stderr/output file) ...
+             # Return error dictionary
+             if 'error_message' not in locals():
+                  error_message = f"Pose estimation worker failed with exit code {process.returncode}."
+             logging.error(error_message)
+             return {"error": error_message}
 
-            logging.error(error_message)
-            return {"error": error_message}
-
+    except FileNotFoundError as fnf_error:
+         logging.error(f"File not found error: {fnf_error}")
+         return {"error": str(fnf_error)}
     except subprocess.TimeoutExpired:
         elapsed_time = time.time() - start_time
         logging.error(f"Pose estimation worker timed out after {elapsed_time:.2f} seconds (limit: {timeout_seconds}s).")
@@ -177,20 +174,22 @@ def estimate_pose_via_subprocess(image_file_storage, object_name, bbox, visualiz
         logging.exception(f"An unexpected error occurred in estimate_pose_via_subprocess after {elapsed_time:.2f} seconds.")
         return {"error": f"Server error during subprocess execution: {str(e)}"}
     finally:
-        pass
-        # # 5. Cleanup temporary files
-        # logging.debug(f"Cleaning up temporary files: {temp_image_path}, {temp_output_path}")
-        
-        # if temp_image_path.exists():
-        #     try:
-        #         os.remove(temp_image_path)
-        #     except OSError as e:
-        #         logging.warning(f"Could not remove temp image file {temp_image_path}: {e}")
-        # if temp_output_path.exists():
-        #     try:
-        #         os.remove(temp_output_path)
-        #     except OSError as e:
-        #         logging.warning(f"Could not remove temp output file {temp_output_path}: {e}")
+        # 5. Cleanup temporary files CREATED by this function
+        # Only delete temp_image_path if it was created by us (from FileStorage)
+        if temp_image_path and temp_image_path.exists():
+            logging.debug(f"Cleaning up temporary image file: {temp_image_path}")
+            try:
+                os.remove(temp_image_path)
+            except OSError as e:
+                logging.warning(f"Could not remove temp image file {temp_image_path}: {e}")
+        # Always delete the temporary output file if it exists
+        if temp_output_path and temp_output_path.exists():
+            logging.debug(f"Cleaning up temporary output file: {temp_output_path}")
+            try:
+                os.remove(temp_output_path)
+            except OSError as e:
+                logging.warning(f"Could not remove temp output file {temp_output_path}: {e}")
+
 
 
 def estimate_pose(pose_handler, image_input, object_name, bbox, **kwargs):

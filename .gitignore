@@ -23,6 +23,10 @@ Inference/*
 image_processing/calibration_data/*
 !image_processing/calibration_data/*.json
 
+!KMR_communication/
+KMR_communication/*
+!KMR_communication/*.py
+
 !KMRcode/
 KMRcode/*
 !KMRcode/*.java
