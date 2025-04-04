@@ -22,7 +22,7 @@ from transformers import AutoConfig
 # run me with python -m image_processing.Megapose_testing
 
 def main():
-    model_handler, pose_handler, depth_handler = initialize_handlers("grounding_dino")
+    model_handler = initialize_handlers("glamm")
     image_file = "images/JustPickIt/img.png"
     prompt = "foam brick"
 
@@ -30,8 +30,8 @@ def main():
     print("Result:", detection_result)
 
     image = Image.open(image_file).convert("RGB")
-    depth_estimation_result = depth_handler.estimate_depth(image)
-    estimate_pose_result = estimate_pose(pose_handler, image_file, prompt, detection_result["bounding_boxes"][0], DoVis=True, Depth=depth_estimation_result)
+
+    estimate_pose_result = estimate_pose(pose_handler, image_file, prompt, detection_result["bounding_boxes"][0], DoVis=True)
 
 
     print("Pose Result:", estimate_pose_result)

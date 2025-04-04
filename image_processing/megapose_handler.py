@@ -102,7 +102,7 @@ class MegaPoseHandler:
             depth_image.save(depth_path)
             logging.info(f"Saved depth image for {object_name} in {depth_path}.")
 
-
+        print("E"*100)
         if not Depth:
             image, depth, camera_data = self.load_observation(object_folder, load_depth=False)
         else:
@@ -111,6 +111,7 @@ class MegaPoseHandler:
 
         print("Running MegaPose inference...")
         # Run MegaPose inference
+        print("F"*100)
         output = run_inference_on_example.my_inference(image, depth, camera_data, object_data, self.model_name, object_folder)
 
         print("MegaPose inference finished.")
