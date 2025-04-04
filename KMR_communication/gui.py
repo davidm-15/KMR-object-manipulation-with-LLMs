@@ -185,7 +185,7 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
 
     # Requires passing camera_handler to this function if sequences need it
     ttk.Button(seq_frame, text="Execute Full Sequence (Move+GoAround)",
-               command=lambda: sequences.execute_sequence(camera_handler, clean_folder=True)).pack(pady=5, fill='x') # Add options later
+               command=lambda: sequences.execute_sequence(camera_handler, clean_folder=True, locations=[6])).pack(pady=5, fill='x') # Add options later
     ttk.Button(seq_frame, text="Go Around Positions (Current Location)",
                command=lambda: sequences.go_around_positions(camera_handler)).pack(pady=5, fill='x')
     ttk.Button(seq_frame, text="Run Calibration Capture Routine",

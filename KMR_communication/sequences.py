@@ -196,7 +196,15 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
     for pose_entry in poses_data:
         if "joints" in pose_entry and all(f"A{i}" in pose_entry["joints"] for i in range(1, 8)):
              joint_dict = pose_entry["joints"]
-             joint_dict["speed"] = pose_entry.get("speed", config.DEFAULT_ARM_SPEED) # Use default speed if not specified
+             # Make sure all joint values are floats
+             try:
+                 for i in range(1, 8):
+                     joint_dict[f"A{i}"] = float(joint_dict[f"A{i}"])
+             except ValueError as e:
+                 print(f"Warning: Skipping pose due to non-float joint value: {e} in {pose_entry}")
+                 continue # Skip this pose entry
+
+             joint_dict["speed"] = float(pose_entry.get("speed", config.DEFAULT_ARM_SPEED)) # Use default speed if not specified
              Poses.append(joint_dict)
         else:
              print(f"Warning: Skipping invalid pose entry in {pose_file}: {pose_entry}")
@@ -207,21 +215,60 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
 
     os.makedirs(output_folder, exist_ok=True)
 
-    # Optional: Check current position to decide start direction (more complex logic)
-    # current_position = api.get_iiwa_joint_position()
-    # if current_position: ... decide order ...
+    # --- START: Restore Direction Logic ---
+    print("Checking current position to determine starting direction...")
+    current_position = api.get_iiwa_joint_position() # Get current joints {'A1': val,...}
+    # Optional short delay if needed, e.g., time.sleep(0.5)
+
+    if current_position:
+        try:
+            # Define the joint keys to use for distance calculation
+            joint_names = [f"A{i}" for i in range(1, 8)]
+
+            # Calculate distance to the first pose in the list
+            start_pose_joints = Poses[0]
+            start_distance = sum(abs(start_pose_joints[joint] - current_position[joint]) for joint in joint_names)
+
+            # Calculate distance to the last pose in the list
+            end_pose_joints = Poses[-1]
+            end_distance = sum(abs(end_pose_joints[joint] - current_position[joint]) for joint in joint_names)
+
+            print(f"Distance to start pose (sum abs diff): {start_distance:.4f}")
+            print(f"Distance to end pose (sum abs diff): {end_distance:.4f}")
+
+            if end_distance < start_distance:
+                print("Robot is closer to the end pose. Reversing pose order.")
+                Poses = Poses[::-1] # Reverse the list in-place
+            else:
+                print("Robot is closer to the start pose. Using original pose order.")
+
+        except KeyError as e:
+            print(f"Warning: Could not calculate distances - missing joint key {e} in poses or current position. Using default order.")
+        except Exception as e:
+            print(f"Warning: An unexpected error occurred during distance calculation: {e}. Using default order.")
+    else:
+        print("Warning: Could not get current joint position. Using default pose order.")
+    # --- END: Restore Direction Logic ---
+
 
     print(f"Starting GoAround sequence using {len(Poses)} poses from {pose_file}")
+    # Loop through the (potentially reversed) Poses list
     for i, pose in enumerate(Poses):
+        # Make sure keys match API requirements ('A1'...'A7')
         print(f"Moving to pose {i+1}/{len(Poses)}: { {k: round(v, 3) for k, v in pose.items() if k != 'speed'} }")
-        response = api.goto_joint(
-            pose["A1"], pose["A2"], pose["A3"], pose["A4"],
-            pose["A5"], pose["A6"], pose["A7"], speed=pose["speed"]
-        )
+        try:
+            response = api.goto_joint(
+                pose["A1"], pose["A2"], pose["A3"], pose["A4"],
+                pose["A5"], pose["A6"], pose["A7"], speed=pose["speed"]
+            )
+        except KeyError as e:
+            print(f"  ERROR: Missing joint key {e} in pose data. Skipping move.")
+            continue # Skip to the next pose
+
         time.sleep(0.5) # Give time for command acknowledgement
 
         if response and response.ok and response.text.strip() == "OK":
-            print("Move successful. Capturing data...")
+            print("  Move successful. Capturing data...")
             # Call the data capture function
             get_and_save_image_data(
                 camera_handler,
@@ -233,13 +280,12 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
                 delay_before_capture=1.5 # Allow extra time for settling after move
             )
         else:
-            print(f"Error moving to pose {i+1} or response not OK: {response.text if response else 'No response'}")
+            print(f"  Error moving to pose {i+1} or response not OK: {response.text if response else 'No response'}")
             # Decide whether to stop or continue
-            # break
-            print("Continuing to next pose...")
+            # break # Uncomment to stop sequence on move failure
+            print("  Continuing to next pose...")
 
     print("GoAround sequence finished.")
-
 
 def execute_sequence(camera_handler: CameraHandler, **kwargs):
     """Executes a sequence involving moving the KMR and performing GoAround."""
@@ -274,7 +320,7 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
                 do_6d_estimation=do_6d_estimation,
                 detection_item=detection_item,
                 # Use a location-specific json filename or append to the main one
-                json_filename=f"location_{location}_{json_filename}"
+                json_filename=json_filename
             )
         else:
             print(f"Failed to move to location {location}. Skipping GoAround.")
