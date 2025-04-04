@@ -262,6 +262,7 @@ def GetAndSaveImage(**kwargs):
         image = camera.capture_image()
         camera.save_image(image, f"{output_folder}image_{timestamp}.png")
         if do_detection:
+            print("Sending image to server for detection...")
             image_data = ndarray_to_bytes(image)
             bounding_boxes = send_image_to_server(image_data, detection_item)
             if bounding_boxes:
@@ -274,9 +275,22 @@ def GetAndSaveImage(**kwargs):
                 camera.save_image(image, f"{output_folder}image_{timestamp}_detected.png")
                 if do_6d_estimation:
                     # Call the 6D estimation function here
-                    pose_result = send_for_pose_estimation(image_data, bounding_boxes[0], detection_item)
+                    pose_result = send_for_pose_estimation(image_data, bounding_boxes[0], detection_item)["poses"][0]["pose"]
                     if pose_result:
-                        print(f"6D Pose: {pose_result}")
+                        print(f"6D Pose: \n{pose_result}")
+                        object_in_camera = np.array(pose_result)
+                        object_in_camera[:3, 3] = object_in_camera[:3, 3] * 1000  # Convert to mm
+
+                        pose_data = call_endpoint("GetPose")
+                        position_data = call_endpoint("GetIIWAposition")
+                        pose_data = pose_data.json()
+                        position_data = position_data.json()
+                        camera_in_world = GetCameraInWorld(pose_data, position_data)
+                        object_in_world = ObjectInWorld(camera_in_world, object_in_camera)
+                        
+                        print("Object in world coordinates: \n", object_in_world)
+
+
                     
 
 
@@ -319,9 +333,11 @@ def GetAndSaveImage(**kwargs):
 def GoAroundPositions(**kwargs):
     output_folder = kwargs.get("output_folder", "images/GoAround/")
     do_detection = kwargs.get("do_detection", False)
+    do_6d_estimation = kwargs.get("do_6d_estimation", False)
+    detection_item = kwargs.get("detection_item", "foam brick")
 
     try:
-        with open("image_processing/calibration_data/OneAxisForVitek.json", "r") as file:
+        with open("image_processing/calibration_data/GoAroundHandPoses.json", "r") as file:
             poses_data = json.load(file)
             Poses = [
                 {
@@ -362,7 +378,7 @@ def GoAroundPositions(**kwargs):
         response = goto_joint(pose["A1"], pose["A2"], pose["A3"], pose["A4"], pose["A5"], pose["A6"], pose["A7"], pose["speed"])
         time.sleep(0.5)
         if response and response.text.strip() == "OK":
-            GetAndSaveImage(output_folder=output_folder, do_detection=do_detection)
+            GetAndSaveImage(output_folder=output_folder, do_detection=do_detection, do_6d_estimation=do_6d_estimation, detection_item=detection_item)
 
     
 
@@ -394,14 +410,32 @@ def GoAround(Start, End, **kwargs):
         if response and response.text.strip() == "OK":
             GetAndSaveImage(output_folder=output_folder, do_detection=do_detection)
 
-def ExecuteSequence():
-    locations = [5, 1, 2, 3, 4]
+def ExecuteSequence(**kwargs):
+    do_detection = kwargs.get("do_detection", False)
+    do_6d_estimation = kwargs.get("do_6d_estimation", False)
+    output_folder = kwargs.get("output_folder", "images/GoAround/")
+    detection_item = kwargs.get("detection_item", "mustard bottle")
+    clean_fodler = kwargs.get("clean_fodler", False)
+
+    if clean_fodler:
+        if os.path.exists(output_folder):
+            for file in os.listdir(output_folder):
+                file_path = os.path.join(output_folder, file)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        os.rmdir(file_path)
+                except Exception as e:
+                    print(f"Failed to delete {file_path}. Reason: {e}")
+
+    locations = [1, 2]
     for location in locations:
         response = MoveToLocation(location)
         if response and response.text.strip() == "OK":
             time.sleep(3)
             # GoAroundRepeat()
-            GoAroundPositions(output_folder=f"images/GoAround/", do_detection=False)
+            GoAroundPositions(output_folder=output_folder, do_detection=do_detection, do_6d_estimation=do_6d_estimation, detection_item=detection_item)
 
 
 def go_home():
@@ -725,11 +759,13 @@ def JustPickIt2():
 if __name__ == "__main__":
     np.set_printoptions(suppress=True)
 
-    while True:
-        JustPickIt2()
-        time.sleep(5)
+    # while True:
+    #     JustPickIt2()
+    #     time.sleep(5)
 
 
     # JustPickIt()
     # create_gui()
+
+    ExecuteSequence(do_detection=True, do_6d_estimation=True, output_folder="images/GoAround/", detection_item="plug-in outlet expander", clean_fodler=True)
 
