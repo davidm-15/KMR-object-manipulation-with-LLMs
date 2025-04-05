@@ -89,16 +89,36 @@ def process_image_and_estimate_pose(image: np.ndarray, item_name: str, T_world_c
     # --- Perform 6D Pose Estimation (using the first detection) ---
     print("Sending for 6D pose estimation...")
     first_bbox = bounding_boxes[0]
-    pose_result_raw = ipc.send_for_pose_estimation(image_bytes, first_bbox, item_name)
+    # Decide if visualization is needed for this sequence step
+    request_vis = True # Or False, or get from kwargs
 
-    if not pose_result_raw or 'poses' not in pose_result_raw or not pose_result_raw['poses']:
-        print("6D Pose estimation failed or returned no poses.")
-        return None
+    pose_result_dict = ipc.send_for_pose_estimation(
+        image_bytes,
+        item_name, # Make sure item_name matches a folder in MEGAPOSE_OBJECTS_PATH
+        first_bbox,
+        visualize=request_vis # Pass the flag
+    )
+
+
+    # Check for errors returned from the server/worker
+    if pose_result_dict is None or "error" in pose_result_dict:
+        error_msg = pose_result_dict.get("error", "Unknown error") if pose_result_dict else "Returned None"
+        print(f"6D Pose estimation failed: {error_msg}")
+        return None # Indicate failure
+
+    # Check if poses were actually found
+    if not pose_result_dict.get("poses"):
+         print(f"6D Pose estimation ran successfully but found no poses for '{item_name}'.")
+         return None # Indicate no pose found
 
     # Extract 4x4 pose matrix (assuming server returns it correctly)
     # Pose from server is T_cam_obj (Camera -> Object)
-    T_cam_obj_list = pose_result_raw['poses'][0]['pose']
-    T_cam_obj = np.array(T_cam_obj_list) # Convert list from JSON back to numpy array
+    first_pose_info = pose_result_dict["poses"][0]
+    T_cam_obj_list = first_pose_info["pose"]
+    T_cam_obj = np.array(T_cam_obj_list)
+    score = first_pose_info.get("score", 0.0)
+    print(f"Pose estimation score: {score:.4f}")
+
 
     # IMPORTANT: Verify units from pose estimation server. Assume meters needs conversion.
     # If server provides meters, convert translation to mm. If already mm, skip.

@@ -1,3 +1,4 @@
+# image_processing/glamm_handler.py
 import logging
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection

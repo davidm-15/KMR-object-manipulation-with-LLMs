@@ -7,7 +7,6 @@ import argparse
 from . import config
 from . import kuka_api as api
 from . import utils
-# Assuming camera_handler.py is directly inside KMR_communication
 from .camera_handler import CameraHandler
 from . import sequences
 from . import gui

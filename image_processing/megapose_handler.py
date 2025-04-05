@@ -1,3 +1,4 @@
+# image_processing/megapose_handler.py
 import os
 import json
 import torch
