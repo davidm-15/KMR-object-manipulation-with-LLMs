@@ -53,7 +53,6 @@ class MegaPoseHandler:
 
     def estimate_pose(self, image, object_name, bbox, **kwargs):
         """Estimate 6D pose for the given image and object name."""
-
         DoVis = kwargs.get("DoVis", False)
         Depth = kwargs.get("Depth", None)
 
@@ -69,7 +68,6 @@ class MegaPoseHandler:
         # Save image
         image_path = object_folder / "image_rgb.png"
         image.save(image_path)
-
 
         if DoVis:
             # Draw bounding box on the image and save it
@@ -94,7 +92,6 @@ class MegaPoseHandler:
         logging.info(f"Saved image and bounding box for {object_name} in {object_folder}.")
 
         print("Loading object data...")
-        print("Object folder: ", object_folder)
         # Load required data
         if Depth is not None:
             # Save depth as image_depth.png
@@ -103,7 +100,6 @@ class MegaPoseHandler:
             depth_image.save(depth_path)
             logging.info(f"Saved depth image for {object_name} in {depth_path}.")
 
-        print("E"*100)
         if not Depth:
             image, depth, camera_data = self.load_observation(object_folder, load_depth=False)
         else:
@@ -112,7 +108,6 @@ class MegaPoseHandler:
 
         print("Running MegaPose inference...")
         # Run MegaPose inference
-        print("F"*100)
         output = run_inference_on_example.my_inference(image, depth, camera_data, object_data, self.model_name, object_folder)
 
         print("MegaPose inference finished.")
@@ -127,6 +122,6 @@ class MegaPoseHandler:
 
         if DoVis:
             vis = run_inference_on_example.my_visualization(object_folder, out_path / "visualizations")
-            return {"visualization": vis, "poses": object_data}
+            # return {"visualization": vis, "poses": object_data}
 
         return {"poses": object_data}
