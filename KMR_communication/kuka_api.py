@@ -1,5 +1,6 @@
 # kuka_api.py
 import requests
+import numpy as np
 from . import config  # Import the configuration
 
 def call_endpoint(endpoint: str, params: dict = None, method: str = "GET", **kwargs) -> requests.Response | None:
@@ -109,6 +110,64 @@ def get_gripper_state() -> str | None:
         print("Gripper State:", response.text)
         return response.text
     return None
+
+def IsPositionInZone(x: float, y: float, orientation: float, zone: int) -> bool:
+    """Checks if a position is within a specified zone."""
+
+    # Convert orientation from degrees to radians
+    orientation_rad = np.radians(orientation)
+
+    # Create the rotation matrix
+    rot_mat = np.array([
+        [np.cos(orientation_rad), -np.sin(orientation_rad)],
+        [np.sin(orientation_rad), np.cos(orientation_rad)]
+    ])
+
+    print("Rotation Matrix: ", rot_mat)
+
+    Zone_length = config.LONGEST_LENGTH_KMR + 420
+    Zone_width = config.LONGEST_WIDTH_KMR + 420
+
+    pos1 = rot_mat @ np.array([Zone_length/2, Zone_width/2])
+    pos2 = rot_mat @ np.array([Zone_length/2, -Zone_width/2])
+    pos3 = rot_mat @ np.array([-Zone_length/2, -Zone_width/2])
+    pos4 = rot_mat @ np.array([-Zone_length/2, Zone_width/2])
+    pos5 = rot_mat @ np.array([Zone_length/2, 0])
+    pos6 = rot_mat @ np.array([-Zone_length/2, 0])
+    pos7 = rot_mat @ np.array([0, Zone_width/2])
+    pos8 = rot_mat @ np.array([0, -Zone_width/2])
+    pos9 = rot_mat @ np.array([0, 0])
+    
+
+    poses = [pos1, pos2, pos3, pos4, pos5, pos6, pos7, pos8, pos9]
+
+
+    for pos in poses:
+        params = {
+            "x": x + pos[0]/1000,
+            "y": y + pos[1]/1000,
+            "orientation": orientation,
+            "id": zone
+        }
+
+        print("x: ", params["x"], " \n y: ", params["y"])
+
+        response = call_endpoint("IsPositionInZone", params)
+
+        if response and response.ok:
+            if response.text == "true" or response.text == "false":
+                print("IsPositionInZone:", response.text)
+                if response.text == "true":
+                    return True
+            else:
+                print("Unexpected response from IsPositionInZone:", response.text)
+                return None
+            
+        else:
+            print("Error calling IsPositionInZone:", response)
+            return None
+              
+    return False
 
 # --- Other Actions ---
 def set_led(color: str):

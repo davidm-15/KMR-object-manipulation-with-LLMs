@@ -368,9 +368,17 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     print("\n=== Full Sequence Execution Finished ===")
 
+    T_world_obj = np.array(T_world_obj_list)
+
+
+
+    drive_to_object(T_world_obj)
+
+
+
     if T_world_obj_list is not None:
         # align_A1_with_object(np.array(T_world_obj_list))
-        T_world_obj = np.array(T_world_obj_list) # Convert to numpy array for calculations
+
         # Calculate object position in IIWA base coordinates
         print("Calculating object position in IIWA base coordinates...")
                 
@@ -472,6 +480,10 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
 
     return T_world_obj_list
+
+def drive_to_object(T_world_obj):
+    Object_position = np.array(T_world_obj[:3, 3])  
+
 
 
 def save_current_joints_to_file(camera_handler: CameraHandler):

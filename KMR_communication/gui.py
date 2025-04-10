@@ -207,9 +207,52 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
 
     ttk.Button(get_state_frame, text="Go_to_the_position", command=sequences.Go_to_the_position).pack(side=tk.LEFT, padx=5)
 
+
+    ttk.Separator(seq_frame, orient='horizontal').pack(fill='x', pady=15)
+
+    # Zone Check
+    zone_frame = ttk.Frame(seq_frame)
+    zone_frame.pack(pady=10)
+
+    ttk.Label(zone_frame, text="X:").grid(row=0, column=0)
+    x_entry = ttk.Entry(zone_frame, width=5)
+    x_entry.grid(row=0, column=1)
+    x_entry.insert(0, "0.0")
+
+    ttk.Label(zone_frame, text="Y:").grid(row=0, column=2)
+    y_entry = ttk.Entry(zone_frame, width=5)
+    y_entry.grid(row=0, column=3)
+    y_entry.insert(0, "0.0")
+
+    ttk.Label(zone_frame, text="Orientation:").grid(row=0, column=4)
+    orientation_entry = ttk.Entry(zone_frame, width=5)
+    orientation_entry.grid(row=0, column=5)
+    orientation_entry.insert(0, "0.0")
+
+    ttk.Label(zone_frame, text="Zone:").grid(row=0, column=6)
+    zone_entry = ttk.Entry(zone_frame, width=3)
+    zone_entry.grid(row=0, column=7)
+    zone_entry.insert(0, "1")
+
+    def check_zone():
+        try:
+            x = float(x_entry.get())
+            y = float(y_entry.get())
+            orientation = float(orientation_entry.get())
+            zone = int(zone_entry.get())
+            result = api.IsPositionInZone(x, y, orientation, zone)
+            print(f"Position in Zone {zone}: {result}")
+        except ValueError:
+            print("Invalid input for zone check.")
+
+    ttk.Button(zone_frame, text="Check Zone", command=check_zone).grid(row=0, column=8, padx=5)
+
+
     # Add Honk buttons if desired
     # ttk.Button(seq_frame, text="Honk On", command=api.honk_on).pack(pady=5)
     # ttk.Button(seq_frame, text="Honk Off", command=api.honk_off).pack(pady=5)
+
+    
 
 
     root.mainloop()
