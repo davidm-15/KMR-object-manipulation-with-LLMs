@@ -22,11 +22,12 @@ class GroundingDINOHandler:
         results = self.processor.post_process_grounded_object_detection(
             outputs,
             inputs.input_ids,
-            box_threshold=0.4,
+            box_threshold=0.6,
             text_threshold=0.3,
             target_sizes=[image.size[::-1]]
         )
 
+        print("Results:", results)
         bounding_boxes = [[int(b[0]), int(b[1]), int(b[2]), int(b[3])] for b in results[0]["boxes"]]
 
         return {"bounding_boxes": bounding_boxes}
