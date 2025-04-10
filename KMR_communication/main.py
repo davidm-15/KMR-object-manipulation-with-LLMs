@@ -49,21 +49,22 @@ def main():
         if args.mode == 'gui':
             print("Starting GUI mode...")
             gui.create_gui(cam_handler)
+            # api.IsPositionInZone(13.666, 14.643, 179.0876, 4)
         elif args.mode == 'sequence':
             print(f"Starting Execution Sequence mode for item: '{args.item}'")
             # Define sequence parameters
-            # sequences.execute_sequence(
-            #     cam_handler,
-            #     Only_current=True,
-            #     do_camera_around=True,
-            #     take_images=True,
-            #     do_detection=True,
-            #     do_6d_estimation=True,
-            #     detection_item=args.item,
-            #     clean_folder=args.clean,
-            #     output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
-            # )
-            sequences.Go_to_the_position()
+            sequences.execute_sequence(
+                cam_handler,
+                Only_current=True,
+                do_camera_around=True,
+                take_images=True,
+                do_detection=True,
+                do_6d_estimation=True,
+                detection_item=args.item,
+                clean_folder=args.clean,
+                output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
+            )
+            # sequences.Go_to_the_position()
         elif args.mode == 'calibrate':
              print("Starting Calibration Capture mode...")
              sequences.move_to_hand_poses_and_capture(

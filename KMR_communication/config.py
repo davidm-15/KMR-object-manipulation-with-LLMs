@@ -13,6 +13,9 @@ IIWA_BASE_X_OFFSET = 363
 IIWA_BASE_Y_OFFSET = -184
 IIWA_BASE_Z_OFFSET = 700 # Height of IIWA base from the floor/world origin Z
 
+LONGEST_LENGTH_KMR = 1130
+LONGEST_WIDTH_KMR = 630
+
 # --- File Paths ---
 # Ensure these paths are relative to your project root or use absolute paths
 # Get the directory where this config file is located
