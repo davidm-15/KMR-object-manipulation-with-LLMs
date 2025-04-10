@@ -5,11 +5,10 @@ import logging
 import torch
 import json
 from flask import Flask, request, jsonify
-from image_processing.glamm_handler import GLAMMHandler
-from image_processing.rexseek_handler import RexSeekHandler
 from image_processing.grounding_dino_handler import GroundingDINOHandler
 from image_processing.lisa_handler import LISAHandler
 from image_processing.midas_handler import MiDaSHandler
+from image_processing.yolo_handler import YOLOHandler
 from PIL import Image
 import subprocess
 import re
@@ -24,12 +23,12 @@ logging.basicConfig(level=logging.INFO)
 
 # Run me with python -m communication.server glamm
 # Run me with python -m communication.server rexseek 
+# Run me with python -m communication.server yolo
 
 MODEL_CLASSES = {
-    "glamm": GLAMMHandler,
-    "rexseek": RexSeekHandler,
     "grounding_dino": GroundingDINOHandler,
     "lisa": LISAHandler,
+    "yolo": YOLOHandler,
 }
 
 def parse_megapose_output(output_str):
@@ -136,21 +135,33 @@ def create_app(model_name):
         print("Received request for pose estimation")
         image_file = request.files["image"]
         object_name = request.form["object_name"]
+        do_vis = request.form.get("DoVis", "False").lower() == "true"
+
         bbox = json.loads(request.form["bbox"])
         print("Received bbox:", bbox)
+
+        # Save the image file to the megapose_path + object_name directory
+        save_path = os.path.join(megapose_path, object_name)
+        os.makedirs(save_path, exist_ok=True)
+        image_save_path = os.path.join(save_path, "image_rgb.png")
+
+        # Save the input image
+        image_file.seek(0)  # Reset file pointer to beginning
+        with open(image_save_path, "wb") as f:
+            f.write(image_file.read())
+        image_file.seek(0)  # Reset file pointer again for later use
+
+        print(f"Image saved to {image_save_path}")
         
         # pose = megapose_main()
         # Call the Megapose testing module
         result = subprocess.run(
-            ["python", "-m", "image_processing.Megapose_testing", "--bbox", json.dumps(bbox)],
+            ["python", "-m", "image_processing.Megapose_testing", "--bbox", json.dumps(bbox), "--prompt", object_name, "--image_file", image_save_path, "--DoVis", str(do_vis)],
             capture_output=True,
             text=True
         )
 
         # Save the subprocess result using pickle for debugging
-
-        print("Megapose stdout:", result.stdout)
-        print("Megapose stderr:", result.stderr)
 
         json_path = os.path.join(megapose_path, object_name)
         os.makedirs(json_path, exist_ok=True)
@@ -163,15 +174,17 @@ def create_app(model_name):
             logging.error(f"Error reading pose result file: {e}")
             return jsonify({"error": f"Failed to read pose data: {str(e)}"}), 500
         
-        print("Poses: \n", json_str["poses"])
-        print("First pose: \n", json_str["poses"][0])
         print("Pose matrix: \n", json_str["poses"][0]["pose"])
 
 
 
-        pose = json_str["poses"][0]
+        pose = json_str["poses"][0]["pose"]
 
-        return jsonify(pose)
+        return jsonify({
+            "pose": pose,
+            "label": json_str["poses"][0]["label"]
+        })
+    
 
     return app
 
