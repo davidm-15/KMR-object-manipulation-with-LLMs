@@ -10,7 +10,9 @@ from . import config
 from . import kuka_api as api
 from . import utils
 from .camera_handler import CameraHandler # If used directly
-from . import image_processing_client as ipc
+from communication.client import send_image_to_server
+from communication.client import send_for_pose_estimation
+from scipy.spatial.transform import Rotation as R
 
 def get_current_state_data(camera_handler: CameraHandler, image_filename_base: str) -> dict | None:
     """Captures image, gets robot state, and prepares data dict for saving."""
@@ -66,7 +68,7 @@ def process_image_and_estimate_pose(image: np.ndarray, item_name: str, T_world_c
         return None
 
     print(f"Sending image for detection of '{item_name}'...")
-    bounding_boxes = ipc.send_image_to_server(image_bytes, item_name)
+    bounding_boxes = send_image_to_server(image_bytes, item_name)
 
     if not bounding_boxes:
         print("Object not detected.")
@@ -88,15 +90,11 @@ def process_image_and_estimate_pose(image: np.ndarray, item_name: str, T_world_c
 
     # --- Perform 6D Pose Estimation (using the first detection) ---
     print("Sending for 6D pose estimation...")
-    first_bbox = bounding_boxes[0]
-    # Decide if visualization is needed for this sequence step
-    request_vis = True # Or False, or get from kwargs
-
-    pose_result_dict = ipc.send_for_pose_estimation(
+    
+    pose_result_dict = send_for_pose_estimation(
         image_bytes,
-        item_name, # Make sure item_name matches a folder in MEGAPOSE_OBJECTS_PATH
-        first_bbox,
-        visualize=request_vis # Pass the flag
+        bounding_boxes,
+        item_name
     )
 
 
@@ -107,33 +105,23 @@ def process_image_and_estimate_pose(image: np.ndarray, item_name: str, T_world_c
         return None # Indicate failure
 
     # Check if poses were actually found
-    if not pose_result_dict.get("poses"):
-         print(f"6D Pose estimation ran successfully but found no poses for '{item_name}'.")
-         return None # Indicate no pose found
+    if not pose_result_dict.get("pose"):
+        print(f"6D Pose estimation ran successfully but found no poses for '{item_name}'.")
+        return None # Indicate no pose found
 
     # Extract 4x4 pose matrix (assuming server returns it correctly)
     # Pose from server is T_cam_obj (Camera -> Object)
-    first_pose_info = pose_result_dict["poses"][0]
-    T_cam_obj_list = first_pose_info["pose"]
+    T_cam_obj_list = pose_result_dict["pose"]
     T_cam_obj = np.array(T_cam_obj_list)
-    score = first_pose_info.get("score", 0.0)
-    print(f"Pose estimation score: {score:.4f}")
-
-
-    # IMPORTANT: Verify units from pose estimation server. Assume meters needs conversion.
-    # If server provides meters, convert translation to mm. If already mm, skip.
-    if np.max(np.abs(T_cam_obj[:3, 3])) < 10.0: # Heuristic: if max translation < 10, assume meters
-        print("Converting pose estimation translation from meters to mm.")
-        T_cam_obj[:3, 3] *= 1000
-    else:
-        print("Assuming pose estimation translation is already in mm.")
+    T_cam_obj[:3, 3] *= 1000
 
     print(f"Estimated T_cam_obj:\n{T_cam_obj}")
 
     # Calculate Object in World
     if T_world_cam is None:
-         print("Cannot calculate object in world: T_world_cam is None.")
-         return None
+        print("Cannot calculate object in world: T_world_cam is None.")
+        return None
+
 
     T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
     print(f"Calculated T_world_obj:\n{T_world_obj}")
@@ -179,9 +167,9 @@ def get_and_save_image_data(camera_handler: CameraHandler, **kwargs):
         if T_world_obj is not None:
             T_world_obj_list = T_world_obj.tolist() # Convert back to list for JSON storage
         else:
-             # Save the original image if detection happened but pose failed, or no detection
-             if not os.path.exists(image_detected_save_path): # Check if detection image was already saved
-                 camera_handler.save_image(image, image_save_path)
+            # Save the original image if detection happened but pose failed, or no detection
+            if not os.path.exists(image_detected_save_path): # Check if detection image was already saved
+                camera_handler.save_image(image, image_save_path)
 
     elif not do_detection:
          # Save the original image if no detection is performed
@@ -196,15 +184,23 @@ def get_and_save_image_data(camera_handler: CameraHandler, **kwargs):
 
     time.sleep(kwargs.get("delay_after_save", 1.0))
 
+    if T_world_obj_list is not None:
+        return T_world_obj_list # Return the object pose in world coordinates
+    else:
+        return None 
+
 
 def go_around_positions(camera_handler: CameraHandler, **kwargs):
     """Moves the robot through predefined poses from a file and captures data."""
     output_folder = kwargs.get("output_folder", config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)
+    Only_current = kwargs.get("Only_current", False) # Default to False
+    take_images = kwargs.get("take_images", False) # Default to False
     do_detection = kwargs.get("do_detection", False)
     do_6d_estimation = kwargs.get("do_6d_estimation", False)
     detection_item = kwargs.get("detection_item", "foam brick")
     pose_file = kwargs.get("pose_file", config.GO_AROUND_HAND_POSES_FILE)
     json_filename = kwargs.get("json_filename", "data.json")
+    
 
     poses_data = utils.load_json_data(pose_file)
     if not poses_data or not isinstance(poses_data, list):
@@ -215,19 +211,19 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
     Poses = []
     for pose_entry in poses_data:
         if "joints" in pose_entry and all(f"A{i}" in pose_entry["joints"] for i in range(1, 8)):
-             joint_dict = pose_entry["joints"]
-             # Make sure all joint values are floats
-             try:
-                 for i in range(1, 8):
-                     joint_dict[f"A{i}"] = float(joint_dict[f"A{i}"])
-             except ValueError as e:
-                 print(f"Warning: Skipping pose due to non-float joint value: {e} in {pose_entry}")
-                 continue # Skip this pose entry
+            joint_dict = pose_entry["joints"]
+            # Make sure all joint values are floats
+            try:
+                for i in range(1, 8):
+                    joint_dict[f"A{i}"] = float(joint_dict[f"A{i}"])
+            except ValueError as e:
+                print(f"Warning: Skipping pose due to non-float joint value: {e} in {pose_entry}")
+                continue # Skip this pose entry
 
-             joint_dict["speed"] = float(pose_entry.get("speed", config.DEFAULT_ARM_SPEED)) # Use default speed if not specified
-             Poses.append(joint_dict)
+            joint_dict["speed"] = float(pose_entry.get("speed", config.DEFAULT_ARM_SPEED)) # Use default speed if not specified
+            Poses.append(joint_dict)
         else:
-             print(f"Warning: Skipping invalid pose entry in {pose_file}: {pose_entry}")
+            print(f"Warning: Skipping invalid pose entry in {pose_file}: {pose_entry}")
 
     if not Poses:
         print(f"No valid joint poses found in {pose_file}")
@@ -273,14 +269,22 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
 
     print(f"Starting GoAround sequence using {len(Poses)} poses from {pose_file}")
     # Loop through the (potentially reversed) Poses list
+
+    T_world_obj_list = None 
     for i, pose in enumerate(Poses):
+        # if i < 11:
+        #     continue
         # Make sure keys match API requirements ('A1'...'A7')
         print(f"Moving to pose {i+1}/{len(Poses)}: { {k: round(v, 3) for k, v in pose.items() if k != 'speed'} }")
         try:
-            response = api.goto_joint(
-                pose["A1"], pose["A2"], pose["A3"], pose["A4"],
-                pose["A5"], pose["A6"], pose["A7"], speed=pose["speed"]
-            )
+            if Only_current:
+                i = len(Poses)
+                response = type('Response', (), {'ok': True, 'text': 'OK'})()
+            else:
+                response = api.goto_joint(
+                    pose["A1"], pose["A2"], pose["A3"], pose["A4"],
+                    pose["A5"], pose["A6"], pose["A7"], speed=pose["speed"]
+                )
         except KeyError as e:
             print(f"  ERROR: Missing joint key {e} in pose data. Skipping move.")
             continue # Skip to the next pose
@@ -290,15 +294,18 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
         if response and response.ok and response.text.strip() == "OK":
             print("  Move successful. Capturing data...")
             # Call the data capture function
-            get_and_save_image_data(
-                camera_handler,
-                output_folder=output_folder,
-                do_detection=do_detection,
-                do_6d_estimation=do_6d_estimation,
-                detection_item=detection_item,
-                json_filename=json_filename,
-                delay_before_capture=1.5 # Allow extra time for settling after move
-            )
+            if take_images:
+                T_world_obj_list = get_and_save_image_data(
+                    camera_handler,
+                    output_folder=output_folder,
+                    do_detection=do_detection,
+                    do_6d_estimation=do_6d_estimation,
+                    detection_item=detection_item,
+                    json_filename=json_filename,
+                    delay_before_capture=1.5 # Allow extra time for settling after move
+                )
+            if T_world_obj_list != None:
+                return T_world_obj_list
         else:
             print(f"  Error moving to pose {i+1} or response not OK: {response.text if response else 'No response'}")
             # Decide whether to stop or continue
@@ -306,10 +313,14 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
             print("  Continuing to next pose...")
 
     print("GoAround sequence finished.")
+    return T_world_obj_list
 
 def execute_sequence(camera_handler: CameraHandler, **kwargs):
     """Executes a sequence involving moving the KMR and performing GoAround."""
     output_folder = kwargs.get("output_folder", config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)
+    Only_current = kwargs.get("Only_current", False) # Default to False
+    do_camera_around = kwargs.get("do_camera_around", True) # Default to False
+    take_images = kwargs.get("take_images", False) # Default to False
     do_detection = kwargs.get("do_detection", True) # Default to True
     do_6d_estimation = kwargs.get("do_6d_estimation", True) # Default to True
     detection_item = kwargs.get("detection_item", "mustard bottle")
@@ -321,11 +332,15 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     os.makedirs(output_folder, exist_ok=True) # Ensure directory exists
 
-    locations = kwargs.get("locations", [1, 2]) # Use predefined locations 1 and 2
+    locations = kwargs.get("locations", [8]) # Use predefined locations 1 and 2
 
+    T_world_obj_list = None
     for i, location in enumerate(locations):
         print(f"\n--- Moving to Location {location} ---")
-        response = api.move_to_location(location)
+        if Only_current:
+            response = type('Response', (), {'ok': True, 'text': 'OK'})()
+        else:
+            response = api.move_to_location(location)
         # Add check for move success
         if response and response.ok and response.text.strip() == "OK":
             print(f"Successfully arrived at location {location}. Waiting for system to settle...")
@@ -333,20 +348,130 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
             print(f"\n--- Starting GoAround at Location {location} ---")
             # Pass parameters down to go_around_positions
-            go_around_positions(
-                camera_handler,
-                output_folder=output_folder,
-                do_detection=do_detection,
-                do_6d_estimation=do_6d_estimation,
-                detection_item=detection_item,
-                # Use a location-specific json filename or append to the main one
-                json_filename=json_filename
-            )
+            if do_camera_around:
+                T_world_obj_list = go_around_positions(
+                    camera_handler,
+                    output_folder=output_folder,
+                    Only_current=Only_current,
+                    take_images=take_images,
+                    do_detection=do_detection,
+                    do_6d_estimation=do_6d_estimation,
+                    detection_item=detection_item,
+                    # Use a location-specific json filename or append to the main one
+                    json_filename=json_filename
+                )
+                if T_world_obj_list is not None:
+                    break
         else:
             print(f"Failed to move to location {location}. Skipping GoAround.")
             # Optional: Add error handling or stop the sequence
 
     print("\n=== Full Sequence Execution Finished ===")
+
+    if T_world_obj_list is not None:
+        # align_A1_with_object(np.array(T_world_obj_list))
+        T_world_obj = np.array(T_world_obj_list) # Convert to numpy array for calculations
+        # Calculate object position in IIWA base coordinates
+        print("Calculating object position in IIWA base coordinates...")
+                
+        kmr_pose = api.get_pose()
+        # Get IIWA base position in world coordinates
+        iiwa_base_in_world_mm = utils.get_iiwa_base_in_world([kmr_pose['x'], kmr_pose['y'], kmr_pose['theta']])
+                
+        # Calculate object position relative to IIWA base (only X,Y,Z)
+        object_position = np.array(T_world_obj[:3, 3])  # Extract object position from transformation matrix
+        object_relative_to_base = object_position - iiwa_base_in_world_mm
+            
+        print(f"Object position in world: {object_position}")
+        print(f"IIWA base position in world: {iiwa_base_in_world_mm}")
+        print(f"Object position relative to IIWA base: {object_relative_to_base}")
+
+        # Extract rotation matrix from transformation matrix
+        rotation_matrix = T_world_obj[:3, :3]
+
+        # Convert 3x3 rotation matrix to Euler angles in ZYX (extrinsic) convention
+        r = R.from_matrix(rotation_matrix)
+        angles_rad = r.as_euler('zyx')
+        angles_deg = np.degrees(angles_rad)
+        
+        print(f"Euler angles (ZYX convention):")
+        print(f"A (Z rotation/yaw): {angles_rad[0]:.4f} rad ({angles_deg[0]:.2f}°)")
+        print(f"B (Y rotation/pitch): {angles_rad[1]:.4f} rad ({angles_deg[1]:.2f}°)")
+        print(f"C (X rotation/roll): {angles_rad[2]:.4f} rad ({angles_deg[2]:.2f}°)")
+        
+
+        # Define gripper offset in z direction (mm)
+        gripper_z_offset = 210  # mm
+
+        # Calculate needed end-effector position for proper gripper positioning
+        print("\nCalculating end-effector position with gripper offset consideration:")
+        # The gripper is offset along the z-axis of the end-effector frame
+        # We need to move the end-effector backward by this offset to position the gripper correctly
+
+        # Convert gripper offset from end-effector frame to world frame
+        # We need to use the rotation matrix to transform the offset vector [0, 0, -gripper_z_offset]
+        # (negative because we're moving backward from the object position)
+        offset_vector_ee = np.array([0, 0, -gripper_z_offset, 1])  # Homogeneous coordinates
+        offset_vector_world = np.dot(T_world_obj, offset_vector_ee)
+
+        # Calculate the target end-effector position
+        target_ee_position = offset_vector_world[:3]
+
+        print(f"Object position in world: {object_position}")
+        print(f"Target end-effector position (accounting for gripper offset): {target_ee_position}")
+        print(f"World frame offset vector from object to end-effector: {target_ee_position - object_position}")
+
+        # Calculate distance from object to target position as a sanity check
+        distance = np.linalg.norm(target_ee_position - object_position)
+        print(f"Distance from object to target position: {distance:.2f} mm (should be close to {gripper_z_offset} mm)")
+
+        # Convert rotation matrix to A,B,C Euler angles (same convention as IIWA uses)
+        # Note: These angles are in radians, need to be converted to degrees for the API call
+        r = R.from_matrix(rotation_matrix)
+        angles_rad = r.as_euler('zyx')  # ZYX convention = A,B,C for IIWA
+
+        # Extract target position and orientation for the end effector
+        target_x = float(target_ee_position[0] - iiwa_base_in_world_mm[0])  # Convert to IIWA base coordinates
+        target_y = float(target_ee_position[1] - iiwa_base_in_world_mm[1])
+        target_z = float(target_ee_position[2] - iiwa_base_in_world_mm[2])
+
+        # Extract orientation angles in radians
+        a_rad = float(angles_rad[0])  # Rotation around Z axis
+        b_rad = float(angles_rad[1])  # Rotation around Y axis
+        c_rad = float(angles_rad[2])  # Rotation around X axis
+
+        # Convert radians to degrees for the API
+        a_deg = float(np.degrees(a_rad))
+        b_deg = float(np.degrees(b_rad))
+        c_deg = float(np.degrees(c_rad))
+
+        print("\nMoving end effector to target position with calculated orientation:")
+        print(f"Position (IIWA base coords): X={target_x:.2f}, Y={target_y:.2f}, Z={target_z:.2f} mm")
+        print(f"Orientation (degrees): A={a_deg:.2f}, B={b_deg:.2f}, C={c_deg:.2f}")
+
+        # First align A1 with object for better approach
+
+        # Then move to the target position 
+        print("Moving to target position...")
+        response = api.goto_position(
+            x=target_x, 
+            y=target_y, 
+            z=target_z, 
+            a=a_deg, 
+            b=b_deg, 
+            c=c_deg,
+            speed=0.2,  # Lower speed for safety
+            motion_type="ptp"  # Point-to-point motion
+        )
+
+        if response and response.ok and response.text.strip() == "OK":
+            print("Successfully moved to target position.")
+        else:
+            print(f"Error moving to target position: {response.text if response else 'No response'}")
+
+
+
+    return T_world_obj_list
 
 
 def save_current_joints_to_file(camera_handler: CameraHandler):
@@ -566,13 +691,13 @@ def just_pick_it_step1_calculate_world_pose(camera_handler: CameraHandler):
     return T_world_obj # Return the calculated world pose
 
 
-def just_pick_it_step2_align_A1(T_world_obj: np.ndarray):
+def align_A1_with_object(T_world_obj: np.ndarray):
     """Aligns the robot's A1 joint towards the object's world position."""
     if T_world_obj is None:
         print("Error: T_world_obj is None, cannot align A1.")
         return
 
-    print("--- Starting Step 2: Align A1 ---")
+    print("--- Starting Align A1 ---")
     # 1. Get current robot state (KMR pose and IIWA joints)
     kmr_pose = api.get_pose()
     joints = api.get_iiwa_joint_position()
@@ -580,29 +705,18 @@ def just_pick_it_step2_align_A1(T_world_obj: np.ndarray):
         print("Error: Failed to get robot state for A1 alignment.")
         return
 
-    # 2. Calculate IIWA base position in world
     iiwa_base_in_world_mm = utils.get_iiwa_base_in_world([kmr_pose['x'], kmr_pose['y'], kmr_pose['theta']])
 
-    # 3. Calculate vector from IIWA base to Object in world XY plane
     obj_pos_world_mm = T_world_obj[:3, 3]
     vector_base_to_obj = obj_pos_world_mm[:2] - iiwa_base_in_world_mm[:2] # Only consider X, Y
 
-    # 4. Calculate the angle of this vector in the world frame
-    # angle = atan2(y, x)
     world_angle_to_object_rad = np.arctan2(vector_base_to_obj[1], vector_base_to_obj[0])
 
-    # 5. Calculate the desired A1 angle
-    # The world angle corresponds to KMR_theta + A1 (+ any base offset like pi/2)
-    # So, A1_desired = world_angle - KMR_theta (- offset)
-    # Let's assume A1 = 0 points along KMR's X axis (needs verification based on setup)
-    # If A1=0 aligns with KMR X, then world_angle = KMR_theta + A1
     kmr_theta_rad = kmr_pose['theta']
-    a1_desired_rad = world_angle_to_object_rad - kmr_theta_rad
+    a1_desired_rad = world_angle_to_object_rad - kmr_theta_rad - np.pi/2
 
-    # Normalize angle to be within IIWA limits (approx -170 to +170 deg, or -2.96 to 2.96 rad)
     a1_desired_rad = (a1_desired_rad + np.pi) % (2 * np.pi) - np.pi # Normalize to [-pi, pi]
 
-    # Clamp to physical joint limits (adjust these values if needed)
     a1_min_rad = -2.96
     a1_max_rad = 2.96
     final_a1_angle = np.clip(a1_desired_rad, a1_min_rad, a1_max_rad)
@@ -622,7 +736,7 @@ def just_pick_it_step2_align_A1(T_world_obj: np.ndarray):
     response = api.goto_joint(
         final_a1_angle, joints["A2"], joints["A3"], joints["A4"],
         joints["A5"], joints["A6"], joints["A7"],
-        speed=0.3 # Use a moderate speed for alignment
+        speed=0.3
     )
 
     if response and response.ok and response.text.strip() == "OK":
@@ -631,17 +745,95 @@ def just_pick_it_step2_align_A1(T_world_obj: np.ndarray):
         print("Error during A1 alignment move.")
 
 
-def just_pick_it_full_sequence(camera_handler: CameraHandler):
-    """Runs the two steps of the JustPickIt sequence."""
-    # Step 1: Calculate object pose in world from estimated camera pose
-    T_world_obj = just_pick_it_step1_calculate_world_pose(camera_handler)
+def just_pick_it_full_sequence():
+    # Using the provided object-to-world transformation matrix
+    object_in_world = np.array([
+        [-0.0319, 0.024, 0.9992, 12685.1941],
+        [-0.9895, 0.1401, -0.035, 15230.1932],
+        [-0.1409, -0.9898, 0.0193, 869.069],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
 
-    print("JustPickIt Step 1 completed. T_world_obj:", T_world_obj)
 
-    if T_world_obj is not None:
-        # Add a delay or check before starting step 2
-        time.sleep(2)
-        # Step 2: Align A1 joint towards the calculated object pose
-        just_pick_it_step2_align_A1(T_world_obj)
+    # Get the current KMR pose to calculate the IIWA base position in world
+    kmr_pose = api.get_pose()
+    if not kmr_pose:
+        print("Error: Failed to get KMR pose.")
+        return
+
+    # Calculate IIWA base position in world coordinates
+    iiwa_base_in_world_mm = utils.get_iiwa_base_in_world([kmr_pose['x'], kmr_pose['y'], kmr_pose['theta']])
+    
+    # Extract object position from transformation matrix
+    object_position = object_in_world[:3, 3]
+    
+    # Subtract IIWA base position from object position (only X,Y,Z)
+    object_relative_to_base = object_position - iiwa_base_in_world_mm
+    
+    print(f"Object position in world: {object_position}")
+    print(f"IIWA base position in world: {iiwa_base_in_world_mm}")
+    print(f"Object position relative to IIWA base: {object_relative_to_base}")
+
+
+    align_A1_with_object(object_in_world)
+
+
+def Object_to_world():
+    object_pose_in_camera = [
+        [-0.9996992349624634, -0.020981529727578163, -0.012695626355707645, -0.01995106227695942],
+        [-0.020352913066744804, 0.9986512660980225, -0.04776711016893387, 0.017018599435687065],
+        [0.013680730015039444, -0.047494351863861084, -0.9987779855728149, 0.39274975657463074],
+        [0.0, 0.0, 0.0, 1.0]
+    ]
+
+    T_cam_obj = np.array(object_pose_in_camera)
+    
+    # Check if the units need to be converted (meters to mm)
+    if np.max(np.abs(T_cam_obj[:3, 3])) < 10.0:  # Heuristic: if max translation < 10, assume meters
+        print("Converting pose translation from meters to mm.")
+        T_cam_obj[:3, 3] *= 1000
     else:
-        print("JustPickIt sequence failed at Step 1.")
+        print("Assuming pose translation is already in mm.")
+    
+    # Get current robot state
+    kmr_pose = api.get_pose()
+    iiwa_pos = api.get_iiwa_position()
+    
+    if not all([kmr_pose, iiwa_pos]):
+        print("Failed to get complete robot state.")
+        return None
+    
+    # Calculate T_world_cam
+    T_world_cam = utils.calculate_camera_in_world(kmr_pose, iiwa_pos)
+    if T_world_cam is None:
+        print("Failed to calculate camera pose in world.")
+        return None
+    
+    # Calculate object in world coordinates
+    T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
+    print(f"Object pose in world coordinates:\n{T_world_obj}")
+    
+    return T_world_obj
+
+
+
+
+def Go_to_the_position():
+    T_world_obj = np.array([
+        [-0.7611, 0.5502, 0.3436, 12621.1097],
+        [-0.5215, -0.2041, -0.8285, 15043.4196],
+        [-0.3857, -0.8097, 0.4423, 1341.2886],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
+
+
+    kmr_pose = api.get_pose()
+    iiwa_pos = api.get_iiwa_position()
+    T_world_cam = utils.calculate_camera_in_world(kmr_pose, iiwa_pos)
+    iiwa_base_pos_mm = utils.get_iiwa_base_in_world([kmr_pose['x'], kmr_pose['y'], kmr_pose['theta']])
+
+    t_iiwa_obj = T_world_obj[:3, 3] - iiwa_base_pos_mm[:3]
+    print(f"{t_iiwa_obj=}")
+    print(f"{iiwa_pos=}")
+
+    api.goto_position(t_iiwa_obj[0], t_iiwa_obj[1], t_iiwa_obj[2], iiwa_pos["A"], iiwa_pos["B"], iiwa_pos["C"])

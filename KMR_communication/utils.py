@@ -157,8 +157,11 @@ def calculate_camera_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict) -> n
         # 3. Calculate IIWA End-Effector in IIWA Base Frame (IIWA Base to End-Effector)
         ee_pos_mm = np.array([iiwa_pose_mm_rad["x"], iiwa_pose_mm_rad["y"], iiwa_pose_mm_rad["z"]])
         # KUKA uses ZYX Euler angles for A, B, C
-        ee_orient_rad = np.array([iiwa_pose_mm_rad["C"], iiwa_pose_mm_rad["B"], iiwa_pose_mm_rad["A"]])
-        ee_rot_matrix = R.from_euler('zyx', ee_orient_rad, degrees=False).as_matrix() # Check convention! KUKA might be different. Often it's ZYX extrinsic.
+        print(f"{iiwa_pose_mm_rad['A']=}")
+        print(f"{iiwa_pose_mm_rad['B']=}")
+        print(f"{iiwa_pose_mm_rad['C']=}")
+        ee_orient_rad = np.array([iiwa_pose_mm_rad["A"], iiwa_pose_mm_rad["B"], iiwa_pose_mm_rad["C"]])
+        ee_rot_matrix = R.from_euler('xyz', ee_orient_rad, degrees=False).as_matrix() # Check convention! KUKA might be different. Often it's ZYX extrinsic.
 
         T_iiwaBase_ee = np.eye(4)
         T_iiwaBase_ee[:3, :3] = ee_rot_matrix
@@ -166,6 +169,13 @@ def calculate_camera_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict) -> n
 
         # 4. Combine Transformations: World -> IIWA Base -> EE -> Camera
         T_world_cam = T_world_iiwaBase @ T_iiwaBase_ee @ T_ee_cam
+
+
+        # angle = kmr_theta_rad + np.pi
+        # rot_z = R.from_euler('z', angle, degrees=False).as_matrix()
+        # R_world_iiwaBase = rot_z
+        # R_world_cam = R_world_iiwaBase @ ee_rot_matrix @ T_ee_cam[:3, :3]
+        # T_world_cam[:3, :3] = R_world_cam
 
         # print("Debug Transforms:")
         # print("T_world_iiwaBase:\n", T_world_iiwaBase)
@@ -196,9 +206,6 @@ def calculate_object_in_world(T_world_cam: np.ndarray, T_cam_obj: np.ndarray) ->
     Returns:
         np.ndarray: The 4x4 transformation matrix (object frame to world frame).
     """
-    # Make sure object pose translation is in mm
-    if np.any(np.abs(T_cam_obj[:3, 3]) < 1.0): # Basic check if units might be meters
-         print("Warning: Object translation in T_cam_obj seems small, ensure it's in mm.")
 
     T_world_obj = T_world_cam @ T_cam_obj
     return T_world_obj

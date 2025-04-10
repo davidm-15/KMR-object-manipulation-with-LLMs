@@ -205,6 +205,8 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
     ttk.Button(get_state_frame, text="Get IIWA Pos", command=api.get_iiwa_position).pack(side=tk.LEFT, padx=5)
     ttk.Button(get_state_frame, text="Get IIWA Joints", command=api.get_iiwa_joint_position).pack(side=tk.LEFT, padx=5)
 
+    ttk.Button(get_state_frame, text="Go_to_the_position", command=sequences.Go_to_the_position).pack(side=tk.LEFT, padx=5)
+
     # Add Honk buttons if desired
     # ttk.Button(seq_frame, text="Honk On", command=api.honk_on).pack(pady=5)
     # ttk.Button(seq_frame, text="Honk Off", command=api.honk_off).pack(pady=5)

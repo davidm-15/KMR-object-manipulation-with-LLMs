@@ -2,7 +2,7 @@
 import requests
 from . import config  # Import the configuration
 
-def call_endpoint(endpoint: str, params: dict = None, method: str = "GET") -> requests.Response | None:
+def call_endpoint(endpoint: str, params: dict = None, method: str = "GET", **kwargs) -> requests.Response | None:
     """
     Sends a request to a specific endpoint of the KUKA robot API.
 
@@ -14,16 +14,13 @@ def call_endpoint(endpoint: str, params: dict = None, method: str = "GET") -> re
     Returns:
         requests.Response | None: The response object or None if an error occurred.
     """
+    timeout = kwargs.get('timeout', 10)  # Default timeout for requests
+
     url = f"{config.BASE_URL}/{endpoint}"
     response = None
     try:
         if method.upper() == "GET":
-            response = requests.get(url, params=params, timeout=10) # Added timeout
-        elif method.upper() == "POST":
-            response = requests.post(url, params=params, timeout=10) # Example for POST
-        else:
-            print(f"Unsupported HTTP method: {method}")
-            return None
+            response = requests.get(url, params=params, timeout=timeout) # Added timeout
 
         response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
         print(f"Response from {endpoint} ({response.status_code}): {response.text[:100]}...") # Print truncated response
@@ -42,10 +39,10 @@ def move(x: float, y: float, theta: float):
     params = {"x": x, "y": y, "Theta": theta}
     call_endpoint("ArrowsMove", params)
 
-def move_to_location(target_number: int):
+def move_to_location(target_number: int, timeout: int = 200):
     """Moves the KMR to a predefined location number."""
     params = {"TargetNumber": target_number}
-    response = call_endpoint("MoveToLocation", params)
+    response = call_endpoint("MoveToLocation", params, timeout=timeout)
     return response # Return response for checking success ("OK")
 
 # --- IIWA Arm Movement ---
@@ -93,6 +90,7 @@ def get_pose() -> dict | None:
 def get_iiwa_position() -> dict | None:
     """Gets the current Cartesian position of the IIWA end-effector."""
     response = call_endpoint("GetIIWAposition")
+    print("IIWA Position:", response.text)
     return response.json() if response and response.ok else None
 
 def get_iiwa_joint_position() -> dict | None:
