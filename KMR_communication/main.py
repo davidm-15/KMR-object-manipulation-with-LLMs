@@ -55,7 +55,7 @@ def main():
             # Define sequence parameters
             sequences.execute_sequence(
                 cam_handler,
-                Only_current=True,
+                Only_current=False,
                 do_camera_around=True,
                 take_images=True,
                 do_detection=True,
@@ -64,6 +64,12 @@ def main():
                 clean_folder=args.clean,
                 output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
             )
+            # sequences.drive_to_object(np.array([
+            #         [-0.7611, 0.5502, 0.3436, 12621.1097],
+            #         [-0.5215, -0.2041, -0.8285, 15043.4196],
+            #         [-0.3857, -0.8097, 0.4423, 1341.2886],
+            #         [0.0, 0.0, 0.0, 1.0]
+            #         ]))
             # sequences.Go_to_the_position()
         elif args.mode == 'calibrate':
              print("Starting Calibration Capture mode...")

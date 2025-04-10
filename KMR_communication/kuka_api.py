@@ -35,10 +35,10 @@ def call_endpoint(endpoint: str, params: dict = None, method: str = "GET", **kwa
         return None
 
 # --- KMR Base Movement ---
-def move(x: float, y: float, theta: float):
+def move(x: float, y: float, theta: float, timeout: int = 200):
     """Moves the KMR base relative to its current position."""
     params = {"x": x, "y": y, "Theta": theta}
-    call_endpoint("ArrowsMove", params)
+    call_endpoint("ArrowsMove", params, timeout=timeout)
 
 def move_to_location(target_number: int, timeout: int = 200):
     """Moves the KMR to a predefined location number."""

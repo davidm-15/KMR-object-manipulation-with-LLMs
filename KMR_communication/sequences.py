@@ -332,7 +332,7 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     os.makedirs(output_folder, exist_ok=True) # Ensure directory exists
 
-    locations = kwargs.get("locations", [8]) # Use predefined locations 1 and 2
+    locations = kwargs.get("locations", [7, 8]) # Use predefined locations 1 and 2
 
     T_world_obj_list = None
     for i, location in enumerate(locations):
@@ -482,9 +482,91 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     return T_world_obj_list
 
 def drive_to_object(T_world_obj):
-    Object_position = np.array(T_world_obj[:3, 3])  
+    Object_position = np.array(T_world_obj[:2, 3])
+    KMR_position = api.get_pose()
+    KMR_orientation = KMR_position['theta']
+    KMR_position = np.array([KMR_position['x']*1000, KMR_position['y']*1000])
+    Rotate_KMR_to_object(KMR_position, KMR_orientation, Object_position)
+
+    time.sleep(3)  # Allow time for KMR to rotate
+
+    KMR_position = api.get_pose()
+    KMR_orientation = KMR_position['theta']
+    KMR_position = np.array([KMR_position['x']*1000, KMR_position['y']*1000])
+
+    # Calculate the direction vector from the object to the IIWA base
+    direction_vector = KMR_position - Object_position
+
+    # Normalize the direction vector
+    norm = np.linalg.norm(direction_vector)
+    if norm == 0:
+        print("Object and KMR are at the same position.")
+        return  # Handle the case where the object and KMR are at the same position
+    direction_vector = direction_vector / norm
+
+    # Calculate the new KMR position that is 420mm away from the object
+    new_KMR_position = Object_position + direction_vector * (420 + 200)
+
+    # Calculate the direction vector from the object to the IIWA base
+    direction_vector = KMR_position - Object_position
+
+    # Normalize the direction vector
+    norm = np.linalg.norm(direction_vector)
+    if norm == 0:
+        print("Object and KMR are at the same position.")
+        return  # Handle the case where the object and KMR are at the same position
+    direction_vector = direction_vector / norm
+
+    # Calculate the new KMR position that is 420mm away from the object
+
+    minimal_iiwa_range = 420  # mm
+    offset_from_object = 200  # mm
+
+    new_KMR_position = Object_position + direction_vector * (minimal_iiwa_range + offset_from_object + config.LONGEST_LENGTH_KMR/2)
+
+    # Calculate the offset in the world frame
+    x_offset_world = new_KMR_position[0] - KMR_position[0]
+    y_offset_world = new_KMR_position[1] - KMR_position[1]
+
+    # Convert the offset to the KMR frame
+    x_offset_kmr = x_offset_world * np.cos(KMR_orientation) + y_offset_world * np.sin(KMR_orientation)
+    y_offset_kmr = -x_offset_world * np.sin(KMR_orientation) + y_offset_world * np.cos(KMR_orientation)
+
+    print(f"Current KMR position: {KMR_position}")
+    print(f"New KMR position: {new_KMR_position}")
+    print(f"Offset to move KMR (World Frame): ({x_offset_world}, {y_offset_world})")
+    print(f"Offset to move KMR (KMR Frame): ({x_offset_kmr}, {y_offset_kmr})")
+
+    # Move the KMR to the new position
+    print(f"Moving KMR to new position: {new_KMR_position}")
+    api.move(x_offset_kmr/1000, y_offset_kmr/1000, 0)
 
 
+    print(f"Object position: {Object_position}")
+    print(f"KMR position: {KMR_position}")
+
+
+def Rotate_KMR_to_object(KMR_position, KMR_orientation, Object_position):
+    # Calculate the angle to rotate KMR to face the object
+    delta_x = Object_position[0] - KMR_position[0]
+    delta_y = Object_position[1] - KMR_position[1]
+
+    # Calculate the angle in radians
+    angle_to_object = np.arctan2(delta_y, delta_x)
+
+
+    # Calculate the rotation needed to align KMR with the object
+    rotation_needed = angle_to_object - KMR_orientation
+
+    # Normalize the rotation to be within -180 to 180 degrees
+    if rotation_needed > np.pi:
+        rotation_needed -= 2*np.pi
+    elif rotation_needed < -np.pi:
+        rotation_needed += 2*np.pi
+
+    print(f"Rotation needed: {rotation_needed} radians")
+
+    api.move(0, 0, rotation_needed)  # Move KMR to face the object
 
 def save_current_joints_to_file(camera_handler: CameraHandler):
     """Gets current joints, position, pose, calculates T_world_cam and saves to HandPoses.json."""
