@@ -10,6 +10,10 @@ import app
 import numpy as np
 from PIL import Image
 from PIL import ImageDraw
+from skimage import measure
+import cv2
+import os
+import random
 import torch # Needed for mask conversion .cpu()
 
 # No json import needed for the handler class itself
@@ -56,7 +60,7 @@ class GlammHandler:
             # Ensure tensor is on CPU and convert to numpy
             try:
                 # Squeeze removes single dimensions, cpu moves to CPU, numpy converts
-                mask_np = mask_tensor.squeeze().cpu().numpy().astype(np.uint8)
+                mask_np = mask_tensor
             except Exception as e:
                 print(f"Error converting mask {i} to numpy: {e}")
                 continue
@@ -85,7 +89,7 @@ class GlammHandler:
 
         return bounding_boxes
 
-    def infer(self, image_path: str, prompt: str) -> dict:
+    def infer(self, image_path: str, prompt: str, **kwargs) -> dict:
         """
         Performs inference on a single image file with a text prompt and returns bounding boxes.
 
@@ -100,7 +104,8 @@ class GlammHandler:
         """
         # 3) Infer - Logic adapted from ProcessPromptImage and main loop
 
-        # Load image using PIL
+        numm = kwargs.get('image_id', 0)  # Default to 0 if not provided
+
         try:
             image = Image.open(image_path).convert("RGB")
         except FileNotFoundError:
@@ -128,10 +133,44 @@ class GlammHandler:
         )
 
         # Convert the predicted segmentation masks to bounding boxes
+        # Assuming pred_masks is a list of torch tensors
+        # Save the predicted masks as .npy files for debugging
+        output_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/YOLO/train/glamm"
+        os.makedirs(output_dir, exist_ok=True)
+        np.save(os.path.join(output_dir, f'pred_masks_{numm}.npy'), pred_masks[0].cpu().numpy())
+
+        pred_masks = pred_masks[0].squeeze().cpu().numpy()
+        print(f"Predicted masks: {pred_masks}")
+        original_values = np.unique(pred_masks[0])
+        print(f"Original values in pred_masks: {original_values}")
+
+        original_pred_masks = [pred_masks.copy()]  # Keep original for debugging
+
+        # Convert the predicted segmentation masks to bounding boxes
+        # Assuming pred_masks is a list of torch tensors
+        mask = pred_masks
+        mask = np.where(mask > 1, 255, 0).astype(np.uint8)  # Thresholding to create a binary mask
+        print(f"{np.unique(mask)}")
+
+        if len(np.unique(mask)) <= 1:
+            print("No objects detected in the image.")
+            return {"bounding_boxes": []}
+        
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        biggest = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
+
+        out = np.where(labels == biggest, 255, 0).astype(np.uint8)
+
+        pred_masks = [out]
+
+
+
+
         bounding_boxes = self._masks_to_boxes(pred_masks)
 
+
         # Return the bounding boxes in the specified dictionary format
-        return {"bounding_boxes": bounding_boxes}
+        return {"bounding_boxes": bounding_boxes, "pred_masks": pred_masks, "original_masks": [original_pred_masks]}
 
 
 # --- Main execution block for testing ---
@@ -145,56 +184,109 @@ if __name__ == '__main__':
     # test_prompt = "person"
 
     test_image_file = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/YOLO/train/image_1743172190_png.rf.4d1791406f3ad11e540332b31dd976a0.jpg"
-    test_prompt = "Please segment yellow mustard bottle"
+    # Directory containing the images
+    image_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/YOLO/train/"
 
-    if not os.path.exists(test_image_file):
-        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print(f"ERROR: Test image file does NOT exist: '{test_image_file}'")
-        print(f"Please update the 'test_image_file' variable in the script.")
-        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    else:
-        # Initialize the handler
-        handler = GlammHandler()
+    # Get a list of all image files in the directory
+    image_files = [f for f in os.listdir(image_dir) if f.endswith(('.jpg', '.jpeg', '.png'))]
 
-        # Run inference
-        print(f"\nRunning inference on '{test_image_file}' with prompt: '{test_prompt}'...")
-        results = handler.infer(test_image_file, test_prompt)
+    # Set the seed for reproducibility
+    random.seed(42)
+    # Randomly select 20 image files
+    num_images = min(20, len(image_files))  # Ensure we don't try to select more images than available
+    test_image_files = random.sample(image_files, num_images)
 
-        # Print results
-        print(f"\n--- Inference Results ---")
-        if results:
-             print(f"  Detected Bounding Boxes: {results['bounding_boxes']}")
-        else:
-             print("  Inference returned None or an error occurred.")
-        print(f"-------------------------\n")
-
-
-    # Draw bounding boxes on image and save it
-    if results["bounding_boxes"]:
-        
-        # Create a copy of the image to draw on
-        img = Image.open(test_image_file).convert("RGB")
-        draw = ImageDraw.Draw(img)
-        
-        # Draw each bounding box
-        for box in results["bounding_boxes"]:
-            x_min, y_min, x_max, y_max = box
-            # Draw rectangle with red outline (width=2)
-            draw.rectangle([x_min, y_min, x_max, y_max], outline="red", width=2)
-        
-            # Create output directory if it doesn't exist
-            output_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/YOLO/train/glamm"
-            os.makedirs(output_dir, exist_ok=True)
-            
-            # Create output filename based on input filename
-            base_filename = os.path.basename(test_image_file)
-            output_filename = os.path.join(output_dir, f"bbox_{base_filename}")
-            
-            # Save the image
-            img.save(output_filename)
-            print(f"Image with bounding boxes saved to: {output_filename}")
-    else:
-        print("No bounding boxes detected, image not saved.")
+    test_prompt = "If there is an yellow mustard bottle, segment it."
     
+    handler = GlammHandler()
 
-    print("--- GlammHandler Direct Test Finished ---")
+    for image_id, test_image_file in enumerate(test_image_files):
+        # Construct the full path to the image file
+        test_image_file = os.path.join(image_dir, test_image_file)
+
+        if not os.path.exists(test_image_file):
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print(f"ERROR: Test image file does NOT exist: '{test_image_file}'")
+            print(f"Please update the 'test_image_file' variable in the script.")
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        else:
+            # Initialize the handler
+            
+            # Run inference
+            print(f"\nRunning inference on '{test_image_file}' with prompt: '{test_prompt}'...")
+            results = handler.infer(test_image_file, test_prompt, image_id=image_id)
+
+            # Print results
+            print(f"\n--- Inference Results ---")
+            if results:
+                print(f"  Detected Bounding Boxes: {results['bounding_boxes']}")
+            else:
+                print("  Inference returned None or an error occurred.")
+            print(f"-------------------------\n")
+
+
+        # Draw bounding boxes on image and save it
+        if results["bounding_boxes"]:
+            
+            # Create a copy of the image to draw on
+            img = Image.open(test_image_file).convert("RGB")
+            draw = ImageDraw.Draw(img)
+            
+            # Draw each bounding box
+            for box in results["bounding_boxes"]:
+                x_min, y_min, x_max, y_max = box
+                # Draw rectangle with red outline (width=2)
+                draw.rectangle([x_min, y_min, x_max, y_max], outline="red", width=2)
+            
+                # Create output directory if it doesn't exist
+                output_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/YOLO/train/glamm"
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # Create output filename based on input filename
+                base_filename = os.path.basename(test_image_file)
+                output_filename = os.path.join(output_dir, f"bbox_{base_filename}")
+                
+                # Save the image
+                img.save(output_filename)
+                print(f"Image with bounding boxes saved to: {output_filename}")
+
+            # Save the predicted masks as well
+            for i, mask_tensor in enumerate(results["pred_masks"]):
+                # Ensure tensor is on CPU and convert to numpy
+                mask_np = mask_tensor
+
+                # Create output directory if it doesn't exist
+                output_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/YOLO/train/glamm"
+                os.makedirs(output_dir, exist_ok=True)
+
+                # Create output filename based on input filename
+                base_filename = os.path.basename(test_image_file)
+                mask_filename = os.path.join(output_dir, f"mask_{base_filename.split('.')[0]}_{i}.png")
+
+                # Convert the numpy mask to a PIL image and save it
+                mask_image = Image.fromarray(mask_np)  # Scale to 0-255
+                mask_image.save(mask_filename)
+                print(f"Mask saved to: {mask_filename}")
+
+            # # Save the original predicted masks as well
+            # for i, mask_tensor in enumerate(results["original_masks"]):
+            #     # Ensure tensor is on CPU and convert to numpy
+            #     mask_np = mask_tensor
+
+            #     # Create output directory if it doesn't exist
+            #     output_dir = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/YOLO/train/glamm"
+            #     os.makedirs(output_dir, exist_ok=True)
+
+            #     # Create output filename based on input filename
+            #     base_filename = os.path.basename(test_image_file)
+            #     mask_filename = os.path.join(output_dir, f"original_mask_{base_filename.split('.')[0]}_{i}.png")
+
+            #     # Convert the numpy mask to a PIL image and save it
+            #     mask_image = Image.fromarray(mask_np * 255)  # Scale to 0-255
+            #     mask_image.save(mask_filename)
+            #     print(f"Original mask saved to: {mask_filename}")
+        else:
+            print("No bounding boxes detected, image not saved.")
+        
+
+        print("--- GlammHandler Direct Test Finished ---")
