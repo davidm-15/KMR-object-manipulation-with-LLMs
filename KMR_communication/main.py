@@ -12,14 +12,14 @@ from . import sequences
 from . import gui
 
 # run me with python -m KMR_communication.main --mode sequence --item "mustard bottle" --clean
-
+# plug-in outlet expander
 def main():
     # Set numpy print options
     np.set_printoptions(suppress=True, precision=4) # Added precision formatting
 
     # Argument Parser (optional, to choose between GUI and sequences)
     parser = argparse.ArgumentParser(description="KUKA KMR IIWA Control Interface")
-    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object"],
+    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object", "scan", "estimate"],
                         help="Operation mode: 'gui', 'sequence', 'calibrate', 'pick'")
     parser.add_argument('--item', type=str, default='plug-in outlet expander', #'foam brick', #'mustard bottle',
                         help="Item name for detection/pose estimation in sequence mode")
@@ -50,12 +50,16 @@ def main():
             print("Starting GUI mode...")
             gui.create_gui(cam_handler)
             # api.IsPositionInZone(13.666, 14.643, 179.0876, 4)
+        elif args.mode == 'estimate':
+            sequences.estimate_the_transformation()
+        elif args.mode == 'scan':
+            sequences.find_object_6D_pose(camera_handler=cam_handler)
         elif args.mode == 'sequence':
             print(f"Starting Execution Sequence mode for item: '{args.item}'")
             # Define sequence parameters
             sequences.execute_sequence(
                 cam_handler,
-                Only_current=False,
+                Only_current=True,
                 do_camera_around=True,
                 take_images=True,
                 do_detection=True,
@@ -64,13 +68,13 @@ def main():
                 clean_folder=args.clean,
                 output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
             )
-            # sequences.drive_to_object(np.array([
-            #         [-0.7611, 0.5502, 0.3436, 12621.1097],
-            #         [-0.5215, -0.2041, -0.8285, 15043.4196],
-            #         [-0.3857, -0.8097, 0.4423, 1341.2886],
-            #         [0.0, 0.0, 0.0, 1.0]
-            #         ]))
-            # sequences.Go_to_the_position()
+            # sequences.just_grab_the_object(np.array([
+            #     [0.4548, 0.8138, 0.3618, 12658.4371],
+            #     [-0.6125, 0.5807, -0.5363, 15149.0346],
+            #     [-0.6466, 0.0223, 0.7625, 1203.2101],
+            #     [0., 0., 0., 1.]
+            # ]))
+            # sequences.Object_to_world()
         elif args.mode == 'calibrate':
              print("Starting Calibration Capture mode...")
              sequences.move_to_hand_poses_and_capture(

@@ -112,54 +112,75 @@ def get_iiwa_base_in_world(kmr_pose_m_rad: list | np.ndarray) -> np.ndarray:
 
     return iiwa_base_position_mm
 
-def calculate_camera_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict) -> np.ndarray | None:
+def get_T_world_iiwabase(kmr_pose_m_rad: list | np.ndarray) -> np.ndarray:
     """
-    Calculates the 4x4 transformation matrix of the camera in the world frame.
+    Calculates the 4x4 transformation matrix of the iiwa base pose
+    in the world coordinate system.
+    """
+    kmr_theta_rad = kmr_pose_m_rad["theta"] + np.pi/2*3
+
+    # --- Rotation Part (R_world_iiwabase) ---
+    # Assumes iiwa base rotation is only around World Z axis, same as KMR
+    
+    print(f"kmr_theta_rad: {kmr_theta_rad}")
+
+    cos_t = np.cos(kmr_theta_rad)
+    sin_t = np.sin(kmr_theta_rad)
+    R_world_iiwabase = np.array([
+        [cos_t, -sin_t, 0.0],
+        [sin_t,  cos_t, 0.0],
+        [0.0,    0.0,   1.0]
+    ])
+
+    # --- Translation Part (p_world_iiwabase) ---
+    p_world_iiwabase_mm = get_iiwa_base_in_world([kmr_pose_m_rad['x'], kmr_pose_m_rad['y'], kmr_pose_m_rad['theta']])
+
+    # --- Construct the 4x4 Matrix ---
+    T = np.identity(4)
+    T[0:3, 0:3] = R_world_iiwabase # np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    T[0:3, 3] = p_world_iiwabase_mm # Assign the 1D array directly
+
+    return T
+
+# Helper function to extract Euler angles (check API's expected convention!)
+def rotation_matrix_to_euler_zyx(R_matrix):
+    """Converts a 3x3 rotation matrix to ZYX Euler angles (roll, pitch, yaw) in radians."""
+    # Ensure input is a NumPy array
+    R_matrix = np.asarray(R_matrix)
+    r = R.from_matrix(R_matrix)
+    # Common convention: 'zyx' means apply Yaw (Z), then Pitch (Y), then Roll (X)
+    # The resulting angles are often called roll, pitch, yaw respectively.
+    # Adjust 'zyx' if your API uses a different convention (e.g., 'xyz', 'zyz')
+    euler_angles = r.as_euler('xyz', degrees=False) # Get radians
+    return euler_angles # Returns [roll, pitch, yaw] or [a, b, c] depending on context
+
+
+def calculate_end_effector_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict) -> np.ndarray | None:
+    """
+    Calculates the 4x4 transformation matrix of the end-effector in the world frame.
 
     Args:
         kmr_pose_m_rad (dict): KMR pose {'x': float (m), 'y': float (m), 'theta': float (rad)}.
         iiwa_pose_mm_rad (dict): IIWA end-effector pose {'x': float (mm), 'y': float (mm), 'z': float (mm),
-                                                         'a': float (rad), 'b': float (rad), 'c': float (rad)}.
+                                                         'A': float (rad), 'B': float (rad), 'C': float (rad)}.
 
     Returns:
-        np.ndarray | None: The 4x4 transformation matrix (camera frame to world frame) or None if error.
+        np.ndarray | None: The 4x4 transformation matrix (end-effector frame to world frame) or None if error.
     """
-    try:
-        # 1. Load Camera Extrinsic Matrix (Camera to End-Effector)
-        extrinsic_data = load_json_data(config.CAMERA_EXTRINSIC_FILE)
-        if not extrinsic_data or "transformation_matrix" not in extrinsic_data:
-             print(f"Error: Could not load or parse {config.CAMERA_EXTRINSIC_FILE}")
-             return None
-        T_ee_cam = np.array(extrinsic_data["transformation_matrix"]) # EE -> Cam
 
-        # 2. Calculate IIWA Base in World Frame (World to IIWA Base)
+    try:
         iiwa_base_pos_mm = get_iiwa_base_in_world([kmr_pose_m_rad['x'], kmr_pose_m_rad['y'], kmr_pose_m_rad['theta']])
         kmr_theta_rad = kmr_pose_m_rad['theta']
 
-        # Rotation of KMR base in world (Z-axis rotation)
-        # Note: Original code had a pi/2*3 offset, let's re-evaluate if needed.
-        # Sticking to standard Z-rotation based on KMR theta for now.
-        # If the robot setup has a fixed offset rotation, add it here.
-        angle = np.pi/2*3 + kmr_theta_rad # From original code
-        # angle = kmr_theta_rad # Standard Z rotation
+        angle = np.pi/2*3 + kmr_theta_rad 
 
-        # Ensure angle is within [-pi, pi] or [0, 2pi] if needed, though R.from_euler handles it
-        # angle = angle % (2 * np.pi)
-
-        # Create the 4x4 transform for World -> IIWA Base
-        # Rotation part (around Z)
         rot_z = R.from_euler('z', angle, degrees=False).as_matrix()
         T_world_iiwaBase = np.eye(4)
         T_world_iiwaBase[:3, :3] = rot_z
-        # Translation part
         T_world_iiwaBase[:3, 3] = iiwa_base_pos_mm
 
-        # 3. Calculate IIWA End-Effector in IIWA Base Frame (IIWA Base to End-Effector)
         ee_pos_mm = np.array([iiwa_pose_mm_rad["x"], iiwa_pose_mm_rad["y"], iiwa_pose_mm_rad["z"]])
-        # KUKA uses ZYX Euler angles for A, B, C
-        print(f"{iiwa_pose_mm_rad['A']=}")
-        print(f"{iiwa_pose_mm_rad['B']=}")
-        print(f"{iiwa_pose_mm_rad['C']=}")
+
         ee_orient_rad = np.array([iiwa_pose_mm_rad["A"], iiwa_pose_mm_rad["B"], iiwa_pose_mm_rad["C"]])
         ee_rot_matrix = R.from_euler('xyz', ee_orient_rad, degrees=False).as_matrix() # Check convention! KUKA might be different. Often it's ZYX extrinsic.
 
@@ -167,32 +188,53 @@ def calculate_camera_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict) -> n
         T_iiwaBase_ee[:3, :3] = ee_rot_matrix
         T_iiwaBase_ee[:3, 3] = ee_pos_mm
 
-        # 4. Combine Transformations: World -> IIWA Base -> EE -> Camera
-        T_world_cam = T_world_iiwaBase @ T_iiwaBase_ee @ T_ee_cam
+        T_world_ee = T_world_iiwaBase @ T_iiwaBase_ee
 
-
-        # angle = kmr_theta_rad + np.pi
-        # rot_z = R.from_euler('z', angle, degrees=False).as_matrix()
-        # R_world_iiwaBase = rot_z
-        # R_world_cam = R_world_iiwaBase @ ee_rot_matrix @ T_ee_cam[:3, :3]
-        # T_world_cam[:3, :3] = R_world_cam
-
-        # print("Debug Transforms:")
-        # print("T_world_iiwaBase:\n", T_world_iiwaBase)
-        # print("T_iiwaBase_ee:\n", T_iiwaBase_ee)
-        # print("T_ee_cam:\n", T_ee_cam)
-        # print("T_world_cam:\n", T_world_cam)
-
-
-        return T_world_cam
+        return T_world_ee
 
     except KeyError as e:
         print(f"Error: Missing key in input dictionaries: {e}")
         return None
     except Exception as e:
-        print(f"Error calculating camera in world: {e}")
+        print(f"Error calculating end effector in world: {e}")
         return None
 
+
+def calculate_camera_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict) -> np.ndarray | None:
+    """
+    Calculates the 4x4 transformation matrix of the camera in the world frame.
+
+    Args:
+        kmr_pose_m_rad (dict): KMR pose {'x': float (m), 'y': float (m), 'theta': float (rad)}.
+        iiwa_pose_mm_rad (dict): IIWA end-effector pose {'x': float (mm), 'y': float (mm), 'z': float (mm),
+                                                         'A': float (rad), 'B': float (rad), 'C': float (rad)}.
+
+    Returns:
+        np.ndarray | None: The 4x4 transformation matrix (camera frame to world frame) or None if error.
+    """
+    try:
+        # First, get the end effector in world frame
+        T_world_ee = calculate_end_effector_in_world(kmr_pose_m_rad, iiwa_pose_mm_rad)
+        if T_world_ee is None:
+            return None
+        
+        # Load the camera extrinsic calibration data
+        extrinsic_data = load_json_data(config.CAMERA_EXTRINSIC_FILE)
+        if not extrinsic_data or "transformation_matrix" not in extrinsic_data:
+             print(f"Error: Could not load or parse {config.CAMERA_EXTRINSIC_FILE}")
+             return None
+        
+        # Transform from end effector to camera frame
+        T_ee_cam = np.array(extrinsic_data["transformation_matrix"])
+        
+        # Calculate camera in world frame
+        T_world_cam = T_world_ee @ T_ee_cam
+
+        return T_world_cam
+
+    except Exception as e:
+        print(f"Error calculating camera in world: {e}")
+        return None
 
 def calculate_object_in_world(T_world_cam: np.ndarray, T_cam_obj: np.ndarray) -> np.ndarray:
     """
@@ -209,6 +251,32 @@ def calculate_object_in_world(T_world_cam: np.ndarray, T_cam_obj: np.ndarray) ->
 
     T_world_obj = T_world_cam @ T_cam_obj
     return T_world_obj
+
+def inverse_homogeneous_transform(T: np.ndarray) -> np.ndarray:
+    """
+    Computes the inverse of a 4x4 homogeneous transformation matrix.
+
+    Args:
+        T (np.ndarray): 4x4 transformation matrix.
+
+    Returns:
+        np.ndarray: Inverse of the transformation matrix.
+    """
+    R = T[:3, :3]
+    t = T[:3, 3]
+
+    # Inverse of rotation
+    R_inv = R.T
+
+    # Inverse of translation
+    t_inv = -R_inv @ t
+
+    # Construct the inverse transformation matrix
+    T_inv = np.eye(4)
+    T_inv[:3, :3] = R_inv
+    T_inv[:3, 3] = t_inv
+
+    return T_inv
 
 def clean_directory(directory_path: str):
     """Removes all files and subdirectories within a given directory."""
