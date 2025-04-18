@@ -13,6 +13,7 @@ from .camera_handler import CameraHandler # If used directly
 from communication.client import send_image_to_server
 from communication.client import send_for_pose_estimation
 from scipy.spatial.transform import Rotation as R
+from robot import iiwa
 
 def get_current_state_data(camera_handler: CameraHandler, image_filename_base: str) -> dict | None:
     """Captures image, gets robot state, and prepares data dict for saving."""
@@ -129,6 +130,161 @@ def process_image_and_estimate_pose(image: np.ndarray, item_name: str, T_world_c
     return T_world_obj # Return the object pose in world coordinates
 
 
+def estimate_the_transformation():
+    object_1_in_cam = np.array([
+        [-0.1489, -0.7005, -0.698, 60.9806],
+        [-0.9499, -0.0947, 0.2978, 124.7719],
+        [-0.2747, 0.7073, -0.6513, 584.4992],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
+    
+    object_2_in_cam = np.array([
+        [-0.1336, 0.0815, -0.9877, 1.862],
+        [-0.7777, -0.6264, 0.0536, 29.4034],
+        [-0.6143, 0.7753, 0.1471, 375.9291],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
+    
+    object_3_in_cam = np.array([
+        [-0.0433, 0.4193, -0.9068, -13.5429],
+        [-0.9092, -0.3928, -0.1383, 38.7004],
+        [-0.4142, 0.8185, 0.3982, 512.3289],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
+
+    def estimate_object_world_position(objects_in_cam, cam_transforms):
+        """Estimates object positions in world coordinates using camera transforms.
+        
+        Args:
+            objects_in_cam: List of 4x4 homogeneous transformation matrices (object in camera frame)
+            cam_transforms: List of camera poses in world coordinates (from robot state data)
+            
+        Returns:
+            List of estimated object poses in world coordinates
+        """
+        if len(objects_in_cam) != len(cam_transforms):
+            print(f"Warning: Number of objects ({len(objects_in_cam)}) doesn't match number of camera transforms ({len(cam_transforms)})")
+            return None
+        
+        object_world_positions = []
+        
+        # Process each object-camera pair
+        for i, (T_cam_obj, T_world_cam) in enumerate(zip(objects_in_cam, cam_transforms)):
+            # Calculate Object in World using T_world_cam @ T_cam_obj
+            T_world_obj = T_world_cam @ T_cam_obj
+            object_world_positions.append(T_world_obj)
+            print(f"Estimated position for object {i+1} in world frame: {T_world_obj[:3, 3]}")
+        
+        return object_world_positions
+
+    def load_camera_transforms():
+        """Loads camera transforms from the JSON data file."""
+        try:
+            with open("images/GoAround/data.json", "r") as f:
+                data = json.load(f)
+            
+            # Extract camera transforms from the data
+            camera_transforms = []
+            for entry in data:
+                if "T_world_camera" in entry and entry["T_world_camera"] is not None:
+                    camera_transforms.append(np.array(entry["T_world_camera"]))
+            
+            if len(camera_transforms) < 3:
+                print(f"Warning: Found only {len(camera_transforms)} camera transforms, expected at least 3")
+            
+            return camera_transforms[:3]  # Return the first three transforms
+        except Exception as e:
+            print(f"Error loading camera transforms: {e}")
+            return None
+
+    # Get the camera transforms from the data file
+    camera_transforms = load_camera_transforms()
+
+    if camera_transforms:        
+        objects_in_cam = [object_1_in_cam, object_2_in_cam, object_3_in_cam]
+        
+        # Estimate object positions in world coordinates
+        world_positions = estimate_object_world_position(objects_in_cam, camera_transforms)
+        
+        if world_positions:
+            print("\nFinal estimated object positions in world frame:")
+            for i, T_world_obj in enumerate(world_positions):
+                print(f"Object {i+1}:\n{np.round(T_world_obj, 4)}")
+    else:
+        print("Failed to load camera transforms. Cannot estimate object world positions.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def find_object_6D_pose(camera_handler: CameraHandler, **kwargs):
+    output_folder = kwargs.get("output_folder", config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)
+    do_detection = kwargs.get("do_detection", True)
+    do_6d_estimation = kwargs.get("do_6d_estimation", True)
+    detection_item = kwargs.get("detection_item", "plug-in outlet expander")
+    json_filename = kwargs.get("json_filename", "data.json")
+    input_positions_file = kwargs.get("input_positions_file", "image_processing\\calibration_data\\find_3D.json")
+
+    with open(input_positions_file, "r") as f:
+        input_positions = json.load(f)
+
+    T_list = []
+
+    for joints in input_positions:
+        joints = joints["joints"]
+        response = api.goto_joint(
+            joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+            joints["A5"], joints["A6"], joints["A7"]
+        )
+
+
+        T_world_obj_list = get_and_save_image_data(
+            camera_handler,
+            output_folder=output_folder,
+            do_detection=do_detection,
+            do_6d_estimation=do_6d_estimation,
+            detection_item=detection_item,
+            json_filename=json_filename
+        )
+        if T_world_obj_list is not None:
+            T_list.append(T_world_obj_list)
+
+        print(f"Object pose in world coordinates:\n{T_world_obj_list}")
+
+    # Calculate average transformation if we have multiple poses
+    if len(T_list) > 0:
+        # Save all detected object positions to the output folder
+        output_file = os.path.join(output_folder, f"{detection_item}_positions.json")
+        
+        # Create data structure for the positions
+        position_data = {
+            "timestamp": int(time.time()),
+            "detection_item": detection_item,
+            "positions": T_list
+        }
+        
+        # Save to JSON file
+        print(f"Saving {len(T_list)} object position(s) to {output_file}")
+        utils.save_json_data(output_file, position_data)
+        
+        # Also return the last detected position
+        return T_list[-1]
+    else:
+        print("No object positions were detected.")
+        return None
+    
+
+
 def get_and_save_image_data(camera_handler: CameraHandler, **kwargs):
     """
     Captures image, gets state, optionally performs detection/pose estimation,
@@ -189,6 +345,99 @@ def get_and_save_image_data(camera_handler: CameraHandler, **kwargs):
     else:
         return None 
 
+
+def go_to_handpose_position(idx: int):
+    """Moves the robot to a specific position based on the HandPoses.json file with given index."""
+    # Load hand poses from file
+    hand_poses_file = config.HAND_POSES_FILE
+    hand_poses_data = utils.load_json_data(hand_poses_file)
+    
+    if not isinstance(hand_poses_data, list) or not hand_poses_data:
+        print(f"Error: No valid data found in {hand_poses_file}")
+        return False
+        
+    # Check if index is within valid range
+    if idx < 0 or idx >= len(hand_poses_data):
+        print(f"Error: Index {idx} is out of range. File contains {len(hand_poses_data)} poses.")
+        return False
+        
+    # Get the specified pose
+    pose_data = hand_poses_data[idx]
+    
+    # Verify that position data exists
+    if "position" not in pose_data:
+        print(f"Error: Position data not found in pose at index {idx}")
+        return False
+        
+    position = pose_data["position"]
+    
+    # Check if all required position keys exist
+    required_keys = ["x", "y", "z", "A", "B", "C"]
+    if not all(key in position for key in required_keys):
+        print(f"Error: Missing position keys in pose at index {idx}")
+        return False
+        
+    print(f"Moving to position from index {idx}: {position}")
+    
+    # Command robot to move to position
+    response = api.goto_position(
+        position["x"], position["y"], position["z"],
+        position["A"], position["B"], position["C"]
+    )
+    
+    if response and response.ok and response.text.strip() == "OK":
+        print(f"Successfully moved to position from index {idx}")
+        return True
+    else:
+        print(f"Failed to move to position from index {idx}: {response.text if response else 'No response'}")
+        return False
+
+
+def go_to_handpose_joints(idx: int):
+    """Moves the robot to specific joint positions based on the HandPoses.json file with given index."""
+    # Load hand poses from file
+    hand_poses_file = config.HAND_POSES_FILE
+    hand_poses_data = utils.load_json_data(hand_poses_file)
+    
+    if not isinstance(hand_poses_data, list) or not hand_poses_data:
+        print(f"Error: No valid data found in {hand_poses_file}")
+        return False
+        
+    # Check if index is within valid range
+    if idx < 0 or idx >= len(hand_poses_data):
+        print(f"Error: Index {idx} is out of range. File contains {len(hand_poses_data)} poses.")
+        return False
+        
+    # Get the specified pose
+    pose_data = hand_poses_data[idx]
+    
+    # Verify that joints data exists
+    if "joints" not in pose_data:
+        print(f"Error: Joints data not found in pose at index {idx}")
+        return False
+        
+    joints = pose_data["joints"]
+    
+    # Check if all required joint keys exist
+    required_keys = [f"A{i}" for i in range(1, 8)]
+    if not all(key in joints for key in required_keys):
+        print(f"Error: Missing joint keys in pose at index {idx}")
+        return False
+        
+    print(f"Moving to joint configuration from index {idx}: {joints}")
+    
+    # Command robot to move to joint positions
+    response = api.goto_joint(
+        joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+        joints["A5"], joints["A6"], joints["A7"]
+    )
+    
+    if response and response.ok and response.text.strip() == "OK":
+        print(f"Successfully moved to joint configuration from index {idx}")
+        return True
+    else:
+        print(f"Failed to move to joint configuration from index {idx}: {response.text if response else 'No response'}")
+        return False
 
 def go_around_positions(camera_handler: CameraHandler, **kwargs):
     """Moves the robot through predefined poses from a file and captures data."""
@@ -272,8 +521,8 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
 
     T_world_obj_list = None 
     for i, pose in enumerate(Poses):
-        # if i < 11:
-        #     continue
+        if i < 8:
+            continue
         # Make sure keys match API requirements ('A1'...'A7')
         print(f"Moving to pose {i+1}/{len(Poses)}: { {k: round(v, 3) for k, v in pose.items() if k != 'speed'} }")
         try:
@@ -327,6 +576,7 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     clean_folder = kwargs.get("clean_folder", False) # Renamed from clean_fodler
     json_filename = kwargs.get("json_filename", "sequence_data.json") # Use a different default filename
 
+
     if clean_folder:
         utils.clean_directory(output_folder)
 
@@ -370,116 +620,150 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     T_world_obj = np.array(T_world_obj_list)
 
-
-
+    return
     drive_to_object(T_world_obj)
 
-
-
-    if T_world_obj_list is not None:
-        # align_A1_with_object(np.array(T_world_obj_list))
-
-        # Calculate object position in IIWA base coordinates
-        print("Calculating object position in IIWA base coordinates...")
-                
-        kmr_pose = api.get_pose()
-        # Get IIWA base position in world coordinates
-        iiwa_base_in_world_mm = utils.get_iiwa_base_in_world([kmr_pose['x'], kmr_pose['y'], kmr_pose['theta']])
-                
-        # Calculate object position relative to IIWA base (only X,Y,Z)
-        object_position = np.array(T_world_obj[:3, 3])  # Extract object position from transformation matrix
-        object_relative_to_base = object_position - iiwa_base_in_world_mm
-            
-        print(f"Object position in world: {object_position}")
-        print(f"IIWA base position in world: {iiwa_base_in_world_mm}")
-        print(f"Object position relative to IIWA base: {object_relative_to_base}")
-
-        # Extract rotation matrix from transformation matrix
-        rotation_matrix = T_world_obj[:3, :3]
-
-        # Convert 3x3 rotation matrix to Euler angles in ZYX (extrinsic) convention
-        r = R.from_matrix(rotation_matrix)
-        angles_rad = r.as_euler('zyx')
-        angles_deg = np.degrees(angles_rad)
-        
-        print(f"Euler angles (ZYX convention):")
-        print(f"A (Z rotation/yaw): {angles_rad[0]:.4f} rad ({angles_deg[0]:.2f}°)")
-        print(f"B (Y rotation/pitch): {angles_rad[1]:.4f} rad ({angles_deg[1]:.2f}°)")
-        print(f"C (X rotation/roll): {angles_rad[2]:.4f} rad ({angles_deg[2]:.2f}°)")
-        
-
-        # Define gripper offset in z direction (mm)
-        gripper_z_offset = 210  # mm
-
-        # Calculate needed end-effector position for proper gripper positioning
-        print("\nCalculating end-effector position with gripper offset consideration:")
-        # The gripper is offset along the z-axis of the end-effector frame
-        # We need to move the end-effector backward by this offset to position the gripper correctly
-
-        # Convert gripper offset from end-effector frame to world frame
-        # We need to use the rotation matrix to transform the offset vector [0, 0, -gripper_z_offset]
-        # (negative because we're moving backward from the object position)
-        offset_vector_ee = np.array([0, 0, -gripper_z_offset, 1])  # Homogeneous coordinates
-        offset_vector_world = np.dot(T_world_obj, offset_vector_ee)
-
-        # Calculate the target end-effector position
-        target_ee_position = offset_vector_world[:3]
-
-        print(f"Object position in world: {object_position}")
-        print(f"Target end-effector position (accounting for gripper offset): {target_ee_position}")
-        print(f"World frame offset vector from object to end-effector: {target_ee_position - object_position}")
-
-        # Calculate distance from object to target position as a sanity check
-        distance = np.linalg.norm(target_ee_position - object_position)
-        print(f"Distance from object to target position: {distance:.2f} mm (should be close to {gripper_z_offset} mm)")
-
-        # Convert rotation matrix to A,B,C Euler angles (same convention as IIWA uses)
-        # Note: These angles are in radians, need to be converted to degrees for the API call
-        r = R.from_matrix(rotation_matrix)
-        angles_rad = r.as_euler('zyx')  # ZYX convention = A,B,C for IIWA
-
-        # Extract target position and orientation for the end effector
-        target_x = float(target_ee_position[0] - iiwa_base_in_world_mm[0])  # Convert to IIWA base coordinates
-        target_y = float(target_ee_position[1] - iiwa_base_in_world_mm[1])
-        target_z = float(target_ee_position[2] - iiwa_base_in_world_mm[2])
-
-        # Extract orientation angles in radians
-        a_rad = float(angles_rad[0])  # Rotation around Z axis
-        b_rad = float(angles_rad[1])  # Rotation around Y axis
-        c_rad = float(angles_rad[2])  # Rotation around X axis
-
-        # Convert radians to degrees for the API
-        a_deg = float(np.degrees(a_rad))
-        b_deg = float(np.degrees(b_rad))
-        c_deg = float(np.degrees(c_rad))
-
-        print("\nMoving end effector to target position with calculated orientation:")
-        print(f"Position (IIWA base coords): X={target_x:.2f}, Y={target_y:.2f}, Z={target_z:.2f} mm")
-        print(f"Orientation (degrees): A={a_deg:.2f}, B={b_deg:.2f}, C={c_deg:.2f}")
-
-        # First align A1 with object for better approach
-
-        # Then move to the target position 
-        print("Moving to target position...")
-        response = api.goto_position(
-            x=target_x, 
-            y=target_y, 
-            z=target_z, 
-            a=a_deg, 
-            b=b_deg, 
-            c=c_deg,
-            speed=0.2,  # Lower speed for safety
-            motion_type="ptp"  # Point-to-point motion
-        )
-
-        if response and response.ok and response.text.strip() == "OK":
-            print("Successfully moved to target position.")
-        else:
-            print(f"Error moving to target position: {response.text if response else 'No response'}")
-
+    just_grab_the_object(T_world_obj)
 
 
     return T_world_obj_list
+
+def just_grab_the_object(T_world_obj):
+
+
+    # Function to move to the pre-grasp position from the calibration file
+    file_path = "image_processing\\calibration_data\\before_gripping_pose.json"
+        
+    with open(file_path, "r") as f:
+        joint_data = json.load(f)
+        
+    joints = joint_data[0]["joints"]  # Access the first element in the list
+
+    response = api.goto_joint(
+        joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+        joints["A5"], joints["A6"], joints["A7"]
+    )
+        
+    if response and response.ok and response.text.strip() == "OK":
+        print("Successfully moved to pre-grasp position")
+        time.sleep(3)  # Allow time for the robot to settle
+    else:
+        print(f"Failed to move to pre-grasp position: {response.text if response else 'No response'}")
+
+
+
+    file_path = "image_processing\\calibration_data\\Mustard_grabbing.json"
+    data = utils.load_json_data(file_path)
+    iiwa_robot = iiwa.IIWA()
+
+    T_object_ee_grasp = np.array(data["T_object_ee_grasp"])
+    T_object_ee_before_grasp = np.array(data["T_object_ee_before_grasp"])
+
+    T_world_ee_before_grasp = T_world_obj @ T_object_ee_before_grasp
+    T_world_ee_grasp = T_world_obj @ T_object_ee_grasp
+
+    print(f"Target EE Pre-Grasp (World):\n{T_world_ee_before_grasp}")
+    print(f"Target EE Grasp (World):\n{T_world_ee_grasp}")
+
+    kmr_pose_m_rad = api.get_pose()
+    T_world_iiwabase = utils.get_T_world_iiwabase(kmr_pose_m_rad)
+
+
+
+    T_inv_world_iiwabase = utils.inverse_homogeneous_transform(T_world_iiwabase)
+
+    print(f"IIWA Base Pose (World):\n{T_world_iiwabase}")
+    print(f"Inv IIWA Base Pose (IIWA_in_World -> World_in_IIWA):\n{T_inv_world_iiwabase}")
+
+
+    T_iiwabase_ee_before_grasp = T_inv_world_iiwabase @ T_world_ee_before_grasp
+    T_iiwabase_ee_grasp = T_inv_world_iiwabase @ T_world_ee_grasp
+
+    # T_object_ee_grasp = T_inv_world_object @ end_effector_world_pose_grab
+    # T_object_ee_before_grasp = T_inv_world_object @ end_effector_world_pose_before_grab
+
+
+    print(f"Target EE Pre-Grasp (IIWA Base):\n{T_iiwabase_ee_before_grasp}")
+    print(f"Target EE Grasp (IIWA Base):\n{T_iiwabase_ee_grasp}")
+
+
+
+    # T_iiwabase_ee_before_grasp[0:3, 0:3] = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
+    # T_iiwabase_ee_before_grasp[0:3, 0:3] = np.array([[0, 1, 0], [0, -1, 0], [-1, 0, 0]])
+    # print(f"Target EE Pre-Grasp (IIWA Base) with Z-axis aligned:\n{T_iiwabase_ee_before_grasp}")
+
+
+
+
+    # --- Extract Position and Orientation for API ---
+    # Position (x, y, z)
+    position_before_grasp = T_iiwabase_ee_before_grasp[0:3, 3]
+    position_grasp = T_iiwabase_ee_grasp[0:3, 3]
+
+    # Orientation (Rotation Matrix -> Euler Angles)
+    # IMPORTANT: Ensure 'zyx' matches the convention expected by api.goto_position
+    # Common alternatives: 'xyz', 'zxy', 'zyz', etc. Check your robot API docs!
+    R_before_grasp = T_iiwabase_ee_before_grasp[0:3, 0:3]
+    R_grasp = T_iiwabase_ee_grasp[0:3, 0:3]
+
+    try:
+        orientation_before_grasp = utils.rotation_matrix_to_euler_zyx(R_before_grasp) # [roll, pitch, yaw]
+        orientation_grasp = utils.rotation_matrix_to_euler_zyx(R_grasp)               # [roll, pitch, yaw]
+    except Exception as e:
+        print(f"Error converting rotation matrix to Euler angles: {e}")
+        # Handle potential issues, e.g., gimbal lock if using Euler angles
+        return
+
+    print(f"Calculated Pre-Grasp Pose (IIWA): pos={position_before_grasp}, orient_rad={orientation_before_grasp}")
+    print(f"Calculated Grasp Pose (IIWA): pos={position_grasp}, orient_rad={orientation_grasp}")
+
+
+    # --- Command the Robot ---
+    print("\n--- Commanding Robot ---")
+    response = api.goto_position(position_before_grasp[0], position_before_grasp[1], position_before_grasp[2],
+                      orientation_before_grasp[0], orientation_before_grasp[1], orientation_before_grasp[2])
+
+    print("-"*50)
+    print(f"Response from IIWA API: {response.text}")
+    print("-"*50)
+
+    if response.text == "failed":
+        iiwa_joints = api.get_iiwa_joint_position()
+        joints = np.array([iiwa_joints["A1"], iiwa_joints["A2"], iiwa_joints["A3"], iiwa_joints["A4"], iiwa_joints["A5"], iiwa_joints["A6"], iiwa_joints["A7"]])
+        print("IIWA solver failed to find a solution. Trying myself...")
+
+        print(f"Current IIWA Joints: {joints}")
+        print(f"T_iiwabase_ee_before_grasp:\n{T_iiwabase_ee_before_grasp}")
+        theta_final, success, final_error, clamped_warning = iiwa_robot.inverse_kinematics_nr(T_iiwabase_ee_before_grasp, joints)
+
+
+        print(f"Inverse Kinematics successful: {theta_final}")
+        response = api.goto_joint(
+            theta_final[0], theta_final[1], theta_final[2],
+            theta_final[3], theta_final[4], theta_final[5], theta_final[6]
+        )
+
+
+
+        return
+
+    print("Waiting after moving to pre-grasp...")
+    time.sleep(10) # Use a non-blocking sleep if possible in a real application
+
+    api.goto_position(position_grasp[0], position_grasp[1], position_grasp[2],
+                      orientation_grasp[0], orientation_grasp[1], orientation_grasp[2])
+    
+
+    time.sleep(10) # Wait for the robot to reach the grasp position
+
+    print("Grasping...")
+    api.close_gripper(force=1)
+
+    time.sleep(5) # Wait for the grasp to complete
+
+    api.go_home()
+
+
 
 def drive_to_object(T_world_obj):
     Object_position = np.array(T_world_obj[:2, 3])
@@ -504,9 +788,6 @@ def drive_to_object(T_world_obj):
         return  # Handle the case where the object and KMR are at the same position
     direction_vector = direction_vector / norm
 
-    # Calculate the new KMR position that is 420mm away from the object
-    new_KMR_position = Object_position + direction_vector * (420 + 200)
-
     # Calculate the direction vector from the object to the IIWA base
     direction_vector = KMR_position - Object_position
 
@@ -520,7 +801,7 @@ def drive_to_object(T_world_obj):
     # Calculate the new KMR position that is 420mm away from the object
 
     minimal_iiwa_range = 420  # mm
-    offset_from_object = 200  # mm
+    offset_from_object = 350  # mm
 
     new_KMR_position = Object_position + direction_vector * (minimal_iiwa_range + offset_from_object + config.LONGEST_LENGTH_KMR/2)
 
@@ -874,40 +1155,242 @@ def just_pick_it_full_sequence():
 
 def Object_to_world():
     object_pose_in_camera = [
-        [-0.9996992349624634, -0.020981529727578163, -0.012695626355707645, -0.01995106227695942],
-        [-0.020352913066744804, 0.9986512660980225, -0.04776711016893387, 0.017018599435687065],
-        [0.013680730015039444, -0.047494351863861084, -0.9987779855728149, 0.39274975657463074],
+        [-0.9269562363624573, 0.37479862570762634, 0.01667231135070324, 0.0017066384898498654],
+        [-0.04112450033426285, -0.05733707174658775, -0.9975075125694275, 0.08262955397367477],
+        [-0.3729085624217987, -0.9253315329551697, 0.06856235861778259, 0.3021644651889801],
         [0.0, 0.0, 0.0, 1.0]
     ]
 
     T_cam_obj = np.array(object_pose_in_camera)
     
-    # Check if the units need to be converted (meters to mm)
-    if np.max(np.abs(T_cam_obj[:3, 3])) < 10.0:  # Heuristic: if max translation < 10, assume meters
-        print("Converting pose translation from meters to mm.")
-        T_cam_obj[:3, 3] *= 1000
-    else:
-        print("Assuming pose translation is already in mm.")
+    T_cam_obj[:3, 3] *= 1000
     
+    T_world_cam = np.array([
+        [-0.005773843536963224, 0.00760280900026774, -0.9999544289746984, 12855.713847550334],
+        [0.9998290010290402, 0.017611585612826948, -0.005639215678894097, 15169.713466383635],
+        [0.01756790915509531, -0.9998159977453388, -0.007703195467518632, 1004.0496167732986],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
+
+    
+    T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
+    
+    T_world_obj = np.array([
+        [0.4548, 0.8138, 0.3618, 12658.4371],
+        [-0.6125, 0.5807, -0.5363, 15149.0346],
+        [-0.6466, 0.0223, 0.7625, 1203.2101],
+        [0., 0., 0., 1.]
+    ])
+
+
+
+    print(f"Object position in world: \n {np.round(T_world_obj, 3)}")
+
+
+
+    kmr_pose_before_grab = {
+        "theta": -3.1126192186315307,
+        "y": 15.117574753084135,
+        "x": 13.804506364617795
+    }
+
+    end_pose_before_grab = {
+        "A": 1.8148843626890712,
+        "B": -1.5420379039543004,
+        "C": 2.8608313000507954,
+        "z": 209.70934299652401,
+        "y": 520.1092771512791,
+        "x": -104.12853107555269
+    }
+
+    end_effector_world_pose_before_grab = utils.calculate_end_effector_in_world(kmr_pose_before_grab, end_pose_before_grab)
+    print(f"End effector position in world before grabing: \n {np.round(end_effector_world_pose_before_grab, 3)}")
+
+    kmr_pose_grab = {
+        "theta": -3.1126192186315307,
+        "y": 15.117574753084135,
+        "x": 13.804506364617795
+    }
+
+    end_pose_grab = {
+        "A": 1.8011174538315637,
+        "B": -1.5417180444396739,
+        "C": 2.8746982057383894,
+        "z": 207.4152813735555,
+        "y": 594.4144922836261,
+        "x": -101.58985296852765
+    }
+
+    end_effector_world_pose_grab = utils.calculate_end_effector_in_world(kmr_pose_grab, end_pose_grab)
+    print(f"End effector position in world while grabing: \n {np.round(end_effector_world_pose_grab, 3)}")
+
+
+
+    R_world_object = T_world_obj[0:3, 0:3]
+    p_world_object = T_world_obj[0:3, 3:4] # Keep as column vector
+
+    R_inv = R_world_object.T
+    p_inv = -R_inv @ p_world_object
+
+    T_inv_world_object = np.identity(4)
+    T_inv_world_object[0:3, 0:3] = R_inv
+    T_inv_world_object[0:3, 3:4] = p_inv
+
+    # Alternatively, use numpy's built-in inverse function (numerically stable)
+    # T_inv_world_object = np.linalg.inv(T_world_object)
+
+    # Calculate the relative grasp pose
+    T_object_ee_grasp = T_inv_world_object @ end_effector_world_pose_grab
+    T_object_ee_before_grasp = T_inv_world_object @ end_effector_world_pose_before_grab
+
+
+    print(f"T_object_ee_grasp: \n{T_object_ee_grasp}")
+    print(f"T_object_ee_before_grasp: \n{T_object_ee_before_grasp}")
+
+    # Save the transformation matrices to JSON file
+    output_data = {
+        "T_object_ee_grasp": T_object_ee_grasp.tolist(),
+        "T_object_ee_before_grasp": T_object_ee_before_grasp.tolist()
+    }
+
+    # Create directory if it doesn't exist
+    os.makedirs(os.path.dirname("image_processing\\calibration_data\\Mustard_grabbing.json"), exist_ok=True)
+
+    # Save the data to file
+    print("Saving transformation matrices to Mustard_grabbing.json...")
+    utils.save_json_data("image_processing\\calibration_data\\Mustard_grabbing.json", output_data)
+    print("Data saved successfully.")
+
+
+    # print("Inverse of T_world_object:")
+    # print(T_inv_world_object)
+    # print("\nConstant Relative Grasp Pose (T_object_ee_grasp):")
+    # print(T_object_ee_grasp)
+
+    # # --- Verification (Optional) ---
+    # # Let's see if T_world_object * T_object_ee_grasp gives us back T_world_ee_grasp
+    # T_world_ee_grasp_calculated = T_world_obj @ T_object_ee_grasp
+    # print("\nVerification: T_world_object @ T_object_ee_grasp:")
+    # print(T_world_ee_grasp_calculated)
+    # print("\nOriginal T_world_ee_grasp:")
+    # print(end_effector_world_pose_before_grab)
+    # print("\nAre they close?", np.allclose(T_world_ee_grasp_calculated, end_effector_world_pose_before_grab))
+
+
+
+    # Get the object pose in camera frame and convert to numpy array
+    object_pose_in_camera = np.array([
+        [-0.6430159211158752, 0.7658520340919495, -0.0011988987680524588, 0.0730501264333725],
+        [0.29208046197891235, 0.24378550052642822, -0.9248014092445374, 0.07726587355136871],
+        [-0.7079687118530273, -0.5950121283531189, -0.38044828176498413, 0.35864686965942383],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
+
+    # Convert translation from meters to millimeters
+    T_cam_obj = object_pose_in_camera.copy()
+    T_cam_obj[:3, 3] *= 1000  # Convert to mm
+
+    T_world_obj = np.array([
+        [0.4548, 0.8138, 0.3618, 12658.4371],
+        [-0.6125, 0.5807, -0.5363, 15149.0346],
+        [-0.6466, 0.0223, 0.7625, 1203.2101],
+        [0., 0., 0., 1.]
+    ])
+
+
+    print("Object pose in camera (mm):")
+    print(np.round(T_cam_obj, 3))
+
     # Get current robot state
-    kmr_pose = api.get_pose()
-    iiwa_pos = api.get_iiwa_position()
+    # Get current robot state using provided values
+    kmr_pose = {
+        "theta": -3.11261921863153,
+        "y": 15.1175747530841,
+        "x": 13.8045063646178
+    }
     
-    if not all([kmr_pose, iiwa_pos]):
-        print("Failed to get complete robot state.")
-        return None
-    
-    # Calculate T_world_cam
+    iiwa_pos = {
+        "A": 0.9958027493802584,
+        "B": -1.1460030984288971,
+        "C": -3.0969707570353333,
+        "z": 367.20846727302757,
+        "y": 436.77502247355704,
+        "x": -350.20044956752224
+    }
+
+    # Calculate camera pose in world coordinates
     T_world_cam = utils.calculate_camera_in_world(kmr_pose, iiwa_pos)
     if T_world_cam is None:
-        print("Failed to calculate camera pose in world.")
-        return None
-    
-    # Calculate object in world coordinates
-    T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
-    print(f"Object pose in world coordinates:\n{T_world_obj}")
-    
-    return T_world_obj
+        print("Failed to calculate camera pose in world coordinates.")
+    else:
+        print("\nCamera pose in world:")
+        print(np.round(T_world_cam, 3))
+
+        # Calculate object pose in world coordinates
+        # T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
+        print("\nObject pose in world:")
+        print(np.round(T_world_obj, 3))
+        
+        # Calculate IIWA base in world
+        T_world_iiwabase = utils.get_T_world_iiwabase(kmr_pose)
+        print("\nIIWA base in world:")
+        print(np.round(T_world_iiwabase, 3))
+        
+        # Calculate inverse transform of IIWA base in world
+        T_inv_world_iiwabase = utils.inverse_homogeneous_transform(T_world_iiwabase)
+        
+        # Calculate object pose in IIWA base frame
+        T_iiwabase_obj = T_inv_world_iiwabase @ T_world_obj
+        print("\nObject pose in IIWA base frame:")
+        print(np.round(T_iiwabase_obj, 3))
+        
+        # Load the grasp transformation matrices from JSON file
+        file_path = "image_processing\\calibration_data\\Mustard_grabbing.json"
+        grasp_data = utils.load_json_data(file_path)
+        
+        if grasp_data:
+            T_object_ee_grasp = np.array(grasp_data["T_object_ee_grasp"])
+            T_object_ee_before_grasp = np.array(grasp_data["T_object_ee_before_grasp"])
+            
+            # Calculate grasp poses in IIWA base frame
+            T_iiwabase_ee_before_grasp = T_iiwabase_obj @ T_object_ee_before_grasp
+            T_iiwabase_ee_grasp = T_iiwabase_obj @ T_object_ee_grasp
+            
+            print("\nPre-grasp pose in IIWA base frame:")
+            print(np.round(T_iiwabase_ee_before_grasp, 3))
+            
+            print("\nGrasp pose in IIWA base frame:")
+            print(np.round(T_iiwabase_ee_grasp, 3))
+            
+            # Extract position and orientation for robot control
+            position_before_grasp = T_iiwabase_ee_before_grasp[0:3, 3]
+            position_grasp = T_iiwabase_ee_grasp[0:3, 3]
+            
+            # Convert rotation matrices to Euler angles (ZYX convention for API)
+            try:
+                orientation_before_grasp = utils.rotation_matrix_to_euler_zyx(T_iiwabase_ee_before_grasp[0:3, 0:3])
+                orientation_grasp = utils.rotation_matrix_to_euler_zyx(T_iiwabase_ee_grasp[0:3, 0:3])
+                
+                print("\nPre-grasp position and orientation (XYZ, ABC):")
+                print(f"Position (mm): {np.round(position_before_grasp, 1)}")
+                print(f"Orientation (rad): {np.round(orientation_before_grasp, 3)}")
+                
+                print("\nGrasp position and orientation (XYZ, ABC):")
+                print(f"Position (mm): {np.round(position_grasp, 1)}")
+                print(f"Orientation (rad): {np.round(orientation_grasp, 3)}")
+                
+                # These values can be directly passed to api.goto_position()
+                print("\nAPI command for pre-grasp pose:")
+                print(f"api.goto_position({position_before_grasp[0]}, {position_before_grasp[1]}, {position_before_grasp[2]}, "
+                      f"{orientation_before_grasp[0]}, {orientation_before_grasp[1]}, {orientation_before_grasp[2]})")
+                
+                print("\nAPI command for grasp pose:")
+                print(f"api.goto_position({position_grasp[0]}, {position_grasp[1]}, {position_grasp[2]}, "
+                      f"{orientation_grasp[0]}, {orientation_grasp[1]}, {orientation_grasp[2]})")
+            except Exception as e:
+                print(f"Error converting rotation matrices to Euler angles: {e}")
+        else:
+            print("Failed to load grasp transformation data from JSON file.")
 
 
 

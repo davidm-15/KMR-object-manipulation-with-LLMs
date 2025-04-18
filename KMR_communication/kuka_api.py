@@ -51,7 +51,8 @@ def goto_position(x: float, y: float, z: float, a: float, b: float, c: float,
                   speed: float = config.DEFAULT_ARM_SPEED, motion_type: str = "ptp"):
     """Moves the IIWA arm to a Cartesian position."""
     params = {"x": x, "y": y, "z": z, "a": a, "b": b, "c": c, "Speed": speed, "Motion": motion_type}
-    call_endpoint("GotoPosition", params)
+    response = call_endpoint("GotoPosition", params)
+    return response # Return response for checking success ("OK")
 
 def goto_joint(a1: float, a2: float, a3: float, a4: float, a5: float, a6: float, a7: float,
                speed: float = config.DEFAULT_ARM_SPEED):

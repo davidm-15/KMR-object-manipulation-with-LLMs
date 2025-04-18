@@ -5,7 +5,11 @@ import numpy as np
 # --- Use Relative Imports ---
 from . import config
 from . import kuka_api as api
+import json
+import os
 from . import sequences # If GUI calls sequence functions
+
+# run me with python -m KMR_communication.main --mode gui
 
 
 def adjust_joint(joint_label: str, delta_deg: float):
@@ -151,6 +155,89 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
         # Use partial or lambda to pass arguments correctly
         ttk.Button(joint_jog_frame, text="-", width=3, command=lambda l=label: adjust_joint(l, -jog_amount)).grid(row=i, column=1, padx=2, pady=2)
         ttk.Button(joint_jog_frame, text="+", width=3, command=lambda l=label: adjust_joint(l, jog_amount)).grid(row=i, column=2, padx=2, pady=2)
+
+    # --- HandPoses Page ---
+    hand_poses_page = ttk.Frame(notebook, padding="10")
+    notebook.add(hand_poses_page, text="Hand Poses")
+
+    # === Go to Position from HandPoses Section ===
+    hand_poses_frame = ttk.LabelFrame(hand_poses_page, text="Go to Position from HandPoses", padding="10")
+    hand_poses_frame.pack(fill="x", pady=10)
+
+    hand_poses_entry_frame = ttk.Frame(hand_poses_frame)
+    hand_poses_entry_frame.pack(pady=5)
+
+    ttk.Label(hand_poses_entry_frame, text="Position Number:").pack(side=tk.LEFT, padx=5)
+    hand_poses_entry = ttk.Entry(hand_poses_entry_frame, width=5)
+    hand_poses_entry.pack(side=tk.LEFT, padx=5)
+    hand_poses_entry.insert(0, "1")  # Default value
+
+    hand_poses_buttons_frame = ttk.Frame(hand_poses_frame)
+    hand_poses_buttons_frame.pack(pady=5)
+
+    ttk.Button(hand_poses_buttons_frame, text="Go To Joints", 
+               command=lambda: sequences.go_to_handpose_joints(-1+int(hand_poses_entry.get()))).pack(side=tk.LEFT, padx=10)
+    ttk.Button(hand_poses_buttons_frame, text="Go To Position", 
+               command=lambda: sequences.go_to_handpose_position(-1+int(hand_poses_entry.get()))).pack(side=tk.LEFT, padx=10)
+    
+    # === HandPoses Table Section ===
+    hand_poses_table_frame = ttk.LabelFrame(hand_poses_page, text="Available Hand Poses", padding="10")
+    hand_poses_table_frame.pack(fill="x", pady=10)
+
+    def load_and_display_hand_poses():
+        try:
+            # Clear existing items in the table
+            for item in hand_poses_tree.get_children():
+                hand_poses_tree.delete(item)
+                
+            # Load the HandPoses.json file
+            json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'communication', 'HandPoses.json')
+            with open(json_path, 'r') as f:
+                hand_poses = json.load(f)
+                
+            # Add each pose to the table
+            for i, pose in enumerate(hand_poses):
+                name = pose.get('name', f"Position {i+1}")
+                hand_poses_tree.insert('', 'end', values=(i+1, name))
+                
+        except Exception as e:
+            print(f"Error loading hand poses: {e}")
+
+    # Create a treeview for the table
+    hand_poses_tree = ttk.Treeview(hand_poses_table_frame, columns=('Index', 'Name'), show='headings', height=6)
+    hand_poses_tree.heading('Index', text='Index')
+    hand_poses_tree.heading('Name', text='Name')
+    hand_poses_tree.column('Index', width=50, anchor='center')
+    hand_poses_tree.column('Name', width=150)
+    hand_poses_tree.pack(fill='both', expand=True)
+
+    # Add a scrollbar
+    scrollbar = ttk.Scrollbar(hand_poses_table_frame, orient="vertical", command=hand_poses_tree.yview)
+    scrollbar.pack(side='right', fill='y')
+    hand_poses_tree.configure(yscrollcommand=scrollbar.set)
+
+    # Button to refresh the table
+    ttk.Button(hand_poses_table_frame, text="Refresh Poses", command=load_and_display_hand_poses).pack(pady=5)
+
+    # Load poses initially
+    load_and_display_hand_poses()
+
+    # Double-click to fill the position entry
+    def on_pose_selected(event):
+        selected_item = hand_poses_tree.selection()
+        if selected_item:
+            index = hand_poses_tree.item(selected_item[0], 'values')[0]
+            hand_poses_entry.delete(0, tk.END)
+            hand_poses_entry.insert(0, str(index))
+            
+    hand_poses_tree.bind('<Double-1>', on_pose_selected)
+
+    # Add save current pose button to this page as well
+    ttk.Separator(hand_poses_page, orient='horizontal').pack(fill='x', pady=15)
+    ttk.Button(hand_poses_page, text="Save Current Pose to HandPoses.json",
+               command=lambda: sequences.save_current_joints_to_file(camera_handler)).pack(pady=5, fill='x')
+
+
 
     # --- Gripper Page ---
     gripper_frame = ttk.Frame(notebook, padding="10")

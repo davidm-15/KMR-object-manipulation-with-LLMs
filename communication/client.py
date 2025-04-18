@@ -6,8 +6,8 @@ import numpy as np
 SERVER_URL_DETECTION = "http://localhost:5000/process"
 SERVER_URL_POSE = "http://localhost:5000/estimate_pose"
 
-INPUT_FOLDER = "images/GoAround_2025_03_28/"
-OUTPUT_FOLDER = "images/GoAround_2025_03_28/output/"
+INPUT_FOLDER = "images/JustPickIt/"
+OUTPUT_FOLDER = "images/JustPickIt/output/"
 PROMPT = "mustard bottle"
 
 # Run me with python -m communication.client
