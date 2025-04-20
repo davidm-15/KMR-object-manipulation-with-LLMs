@@ -229,12 +229,40 @@ def estimate_the_transformation():
 
 def find_object_6D_pose(camera_handler: CameraHandler, **kwargs):
     output_folder = kwargs.get("output_folder", config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)
-    do_detection = kwargs.get("do_detection", True)
-    do_6d_estimation = kwargs.get("do_6d_estimation", True)
+    do_detection = kwargs.get("do_detection", False)
+    do_6d_estimation = kwargs.get("do_6d_estimation", False)
     detection_item = kwargs.get("detection_item", "plug-in outlet expander")
     json_filename = kwargs.get("json_filename", "data.json")
     input_positions_file = kwargs.get("input_positions_file", "image_processing\\calibration_data\\find_3D.json")
 
+    # kmr_pose_m_rad = api.get_pose()
+    # iiwa_pose_mm_rad = api.get_iiwa_position()
+
+    with open("communication\HandPoses.json", "r") as f:
+        input_positions = json.load(f)
+
+    
+
+    for i in range(len(input_positions)):
+        print(f"i: {i}")
+        input_position = input_positions[i]
+        kmr_pose_m_rad = input_position["kmr_pose"]
+        iiwa_pose_mm_rad = input_position["position"]
+
+        ee_ind_word = utils.calculate_end_effector_in_world(kmr_pose_m_rad, iiwa_pose_mm_rad)
+        # print("End effector in world coordinates:\n", ee_ind_word)
+
+
+        extrinsic_data = utils.load_json_data(config.CAMERA_EXTRINSIC_FILE)
+        T_ee_cam = np.array(extrinsic_data["transformation_matrix"])
+        # print("Camera in end effector coordinates:\n", T_ee_cam)
+        T_world_cam = ee_ind_word @ T_ee_cam
+
+        print("Camera in world coordinates:\n", T_world_cam)
+
+        print("\n"*4)
+
+    return
     with open(input_positions_file, "r") as f:
         input_positions = json.load(f)
 

@@ -39,7 +39,7 @@ def main():
     if not cam_handler.is_ready():
         print("CRITICAL ERROR: Camera initialization failed. Exiting.")
         # Optionally, allow running GUI without camera?
-        if args.mode == 'gui' or args.mode == 'sequence' or args.mode == 'pick':
+        if args.mode == 'gui' or args.mode == 'sequence' or args.mode == 'pick' or args.mode == "scan" or args.mode == "estimate":
             print("Running  without camera functionality.")
         else:
             return

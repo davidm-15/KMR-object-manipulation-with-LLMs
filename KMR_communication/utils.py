@@ -5,6 +5,7 @@ import cv2
 import os
 from scipy.spatial.transform import Rotation as R
 from . import config # 
+import utils.image_utils
 
 
 def load_json_data(filepath: str) -> list | dict:
@@ -172,20 +173,24 @@ def calculate_end_effector_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict
         iiwa_base_pos_mm = get_iiwa_base_in_world([kmr_pose_m_rad['x'], kmr_pose_m_rad['y'], kmr_pose_m_rad['theta']])
         kmr_theta_rad = kmr_pose_m_rad['theta']
 
-        angle = np.pi/2*3 + kmr_theta_rad 
+        angle = kmr_theta_rad - np.pi/2
 
         rot_z = R.from_euler('z', angle, degrees=False).as_matrix()
         T_world_iiwaBase = np.eye(4)
         T_world_iiwaBase[:3, :3] = rot_z
         T_world_iiwaBase[:3, 3] = iiwa_base_pos_mm
+        # print(f"T_world_iiwaBase: \n{T_world_iiwaBase}")
 
         ee_pos_mm = np.array([iiwa_pose_mm_rad["x"], iiwa_pose_mm_rad["y"], iiwa_pose_mm_rad["z"]])
 
         ee_orient_rad = np.array([iiwa_pose_mm_rad["A"], iiwa_pose_mm_rad["B"], iiwa_pose_mm_rad["C"]])
-        ee_rot_matrix = R.from_euler('xyz', ee_orient_rad, degrees=False).as_matrix() # Check convention! KUKA might be different. Often it's ZYX extrinsic.
+        # print(f"ee_orient_deg: {np.degrees(ee_orient_rad)}")
+        ee_rot_matrix = utils.image_utils.get_rotation_matrix_z(ee_orient_rad[0]) @ utils.image_utils.get_rotation_matrix_y(ee_orient_rad[1]) @ utils.image_utils.get_rotation_matrix_x(ee_orient_rad[2])
+
+        # print(f"ee_rot_matrix: \n{ee_rot_matrix}")
 
         T_iiwaBase_ee = np.eye(4)
-        T_iiwaBase_ee[:3, :3] = ee_rot_matrix
+        T_iiwaBase_ee[:3, :3] = ee_rot_matrix[:3, :3]
         T_iiwaBase_ee[:3, 3] = ee_pos_mm
 
         T_world_ee = T_world_iiwaBase @ T_iiwaBase_ee
