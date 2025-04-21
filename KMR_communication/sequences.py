@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import os
 import winsound
+import open3d as o3d
 
 from . import config
 from . import kuka_api as api
@@ -229,40 +230,17 @@ def estimate_the_transformation():
 
 def find_object_6D_pose(camera_handler: CameraHandler, **kwargs):
     output_folder = kwargs.get("output_folder", config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)
-    do_detection = kwargs.get("do_detection", False)
-    do_6d_estimation = kwargs.get("do_6d_estimation", False)
-    detection_item = kwargs.get("detection_item", "plug-in outlet expander")
+    do_detection = kwargs.get("do_detection", True)
+    do_6d_estimation = kwargs.get("do_6d_estimation", True)
+    detection_item = kwargs.get("detection_item", "mustard bottle")
     json_filename = kwargs.get("json_filename", "data.json")
-    input_positions_file = kwargs.get("input_positions_file", "image_processing\\calibration_data\\find_3D.json")
+    input_positions_file = kwargs.get("input_positions_file", "image_processing\\grabbing_poses\\find_3D.json")
+    clean_folder = kwargs.get("clean_folder", True) # Renamed from clean_fodler
 
-    # kmr_pose_m_rad = api.get_pose()
-    # iiwa_pose_mm_rad = api.get_iiwa_position()
-
-    with open("communication\HandPoses.json", "r") as f:
-        input_positions = json.load(f)
+    if clean_folder:
+        utils.clean_directory(output_folder)
 
     
-
-    for i in range(len(input_positions)):
-        print(f"i: {i}")
-        input_position = input_positions[i]
-        kmr_pose_m_rad = input_position["kmr_pose"]
-        iiwa_pose_mm_rad = input_position["position"]
-
-        ee_ind_word = utils.calculate_end_effector_in_world(kmr_pose_m_rad, iiwa_pose_mm_rad)
-        # print("End effector in world coordinates:\n", ee_ind_word)
-
-
-        extrinsic_data = utils.load_json_data(config.CAMERA_EXTRINSIC_FILE)
-        T_ee_cam = np.array(extrinsic_data["transformation_matrix"])
-        # print("Camera in end effector coordinates:\n", T_ee_cam)
-        T_world_cam = ee_ind_word @ T_ee_cam
-
-        print("Camera in world coordinates:\n", T_world_cam)
-
-        print("\n"*4)
-
-    return
     with open(input_positions_file, "r") as f:
         input_positions = json.load(f)
 
@@ -648,7 +626,7 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     T_world_obj = np.array(T_world_obj_list)
 
-    return
+    
     drive_to_object(T_world_obj)
 
     just_grab_the_object(T_world_obj)
@@ -785,7 +763,7 @@ def just_grab_the_object(T_world_obj):
     time.sleep(10) # Wait for the robot to reach the grasp position
 
     print("Grasping...")
-    api.close_gripper(force=1)
+    api.close_gripper(force=5)
 
     time.sleep(5) # Wait for the grasp to complete
 
@@ -1182,72 +1160,41 @@ def just_pick_it_full_sequence():
 
 
 def Object_to_world():
-    object_pose_in_camera = [
-        [-0.9269562363624573, 0.37479862570762634, 0.01667231135070324, 0.0017066384898498654],
-        [-0.04112450033426285, -0.05733707174658775, -0.9975075125694275, 0.08262955397367477],
-        [-0.3729085624217987, -0.9253315329551697, 0.06856235861778259, 0.3021644651889801],
-        [0.0, 0.0, 0.0, 1.0]
-    ]
 
-    T_cam_obj = np.array(object_pose_in_camera)
-    
-    T_cam_obj[:3, 3] *= 1000
-    
-    T_world_cam = np.array([
-        [-0.005773843536963224, 0.00760280900026774, -0.9999544289746984, 12855.713847550334],
-        [0.9998290010290402, 0.017611585612826948, -0.005639215678894097, 15169.713466383635],
-        [0.01756790915509531, -0.9998159977453388, -0.007703195467518632, 1004.0496167732986],
-        [0.0, 0.0, 0.0, 1.0]
-    ])
+    grabbing_pose_name = "down, side right"
 
-    
-    T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
-    
-    T_world_obj = np.array([
-        [0.4548, 0.8138, 0.3618, 12658.4371],
-        [-0.6125, 0.5807, -0.5363, 15149.0346],
-        [-0.6466, 0.0223, 0.7625, 1203.2101],
-        [0., 0., 0., 1.]
-    ])
+    out_name = "plug-in_outlet_expander_grabbing.json"
 
-
+    # Load the object pose from the JSON file
+    object_pose_file = "image_processing\\grabbing_poses\\current_object_pose.json"
+    
+    with open(object_pose_file, "r") as f:
+        T_world_obj = np.array(json.load(f))
 
     print(f"Object position in world: \n {np.round(T_world_obj, 3)}")
 
 
 
-    kmr_pose_before_grab = {
-        "theta": -3.1126192186315307,
-        "y": 15.117574753084135,
-        "x": 13.804506364617795
-    }
+    # Load the pose data from the JSON file
+    poses_file_path = "image_processing\\grabbing_poses\\pose_and_prepose.json"
+    with open(poses_file_path, "r") as f:
+        poses_data = json.load(f)
+    
+    # Extract before grab pose (first entry)
+    kmr_pose_before_grab = poses_data[0]["kmr_pose"]
+    end_pose_before_grab = poses_data[0]["position"]
+    
+    # Extract grab pose (second entry)
+    kmr_pose_grab = poses_data[1]["kmr_pose"]
+    end_pose_grab = poses_data[1]["position"]
+    
+    print(f"Loaded pre-grasp KMR pose: {kmr_pose_before_grab}")
+    print(f"Loaded grasp KMR pose: {kmr_pose_grab}")
 
-    end_pose_before_grab = {
-        "A": 1.8148843626890712,
-        "B": -1.5420379039543004,
-        "C": 2.8608313000507954,
-        "z": 209.70934299652401,
-        "y": 520.1092771512791,
-        "x": -104.12853107555269
-    }
+
 
     end_effector_world_pose_before_grab = utils.calculate_end_effector_in_world(kmr_pose_before_grab, end_pose_before_grab)
     print(f"End effector position in world before grabing: \n {np.round(end_effector_world_pose_before_grab, 3)}")
-
-    kmr_pose_grab = {
-        "theta": -3.1126192186315307,
-        "y": 15.117574753084135,
-        "x": 13.804506364617795
-    }
-
-    end_pose_grab = {
-        "A": 1.8011174538315637,
-        "B": -1.5417180444396739,
-        "C": 2.8746982057383894,
-        "z": 207.4152813735555,
-        "y": 594.4144922836261,
-        "x": -101.58985296852765
-    }
 
     end_effector_world_pose_grab = utils.calculate_end_effector_in_world(kmr_pose_grab, end_pose_grab)
     print(f"End effector position in world while grabing: \n {np.round(end_effector_world_pose_grab, 3)}")
@@ -1277,148 +1224,16 @@ def Object_to_world():
 
     # Save the transformation matrices to JSON file
     output_data = {
+        "grabbing_pose_name": grabbing_pose_name,
+        "T_world_obj": T_world_obj.tolist(),
+        "kmr_pose_before_grab": kmr_pose_before_grab,
+        "end_pose_before_grab": end_pose_before_grab,
         "T_object_ee_grasp": T_object_ee_grasp.tolist(),
         "T_object_ee_before_grasp": T_object_ee_before_grasp.tolist()
     }
+    output_file_path = os.path.join("image_processing", "grabbing_poses", out_name)
 
-    # Create directory if it doesn't exist
-    os.makedirs(os.path.dirname("image_processing\\calibration_data\\Mustard_grabbing.json"), exist_ok=True)
-
-    # Save the data to file
-    print("Saving transformation matrices to Mustard_grabbing.json...")
-    utils.save_json_data("image_processing\\calibration_data\\Mustard_grabbing.json", output_data)
-    print("Data saved successfully.")
-
-
-    # print("Inverse of T_world_object:")
-    # print(T_inv_world_object)
-    # print("\nConstant Relative Grasp Pose (T_object_ee_grasp):")
-    # print(T_object_ee_grasp)
-
-    # # --- Verification (Optional) ---
-    # # Let's see if T_world_object * T_object_ee_grasp gives us back T_world_ee_grasp
-    # T_world_ee_grasp_calculated = T_world_obj @ T_object_ee_grasp
-    # print("\nVerification: T_world_object @ T_object_ee_grasp:")
-    # print(T_world_ee_grasp_calculated)
-    # print("\nOriginal T_world_ee_grasp:")
-    # print(end_effector_world_pose_before_grab)
-    # print("\nAre they close?", np.allclose(T_world_ee_grasp_calculated, end_effector_world_pose_before_grab))
-
-
-
-    # Get the object pose in camera frame and convert to numpy array
-    object_pose_in_camera = np.array([
-        [-0.6430159211158752, 0.7658520340919495, -0.0011988987680524588, 0.0730501264333725],
-        [0.29208046197891235, 0.24378550052642822, -0.9248014092445374, 0.07726587355136871],
-        [-0.7079687118530273, -0.5950121283531189, -0.38044828176498413, 0.35864686965942383],
-        [0.0, 0.0, 0.0, 1.0]
-    ])
-
-    # Convert translation from meters to millimeters
-    T_cam_obj = object_pose_in_camera.copy()
-    T_cam_obj[:3, 3] *= 1000  # Convert to mm
-
-    T_world_obj = np.array([
-        [0.4548, 0.8138, 0.3618, 12658.4371],
-        [-0.6125, 0.5807, -0.5363, 15149.0346],
-        [-0.6466, 0.0223, 0.7625, 1203.2101],
-        [0., 0., 0., 1.]
-    ])
-
-
-    print("Object pose in camera (mm):")
-    print(np.round(T_cam_obj, 3))
-
-    # Get current robot state
-    # Get current robot state using provided values
-    kmr_pose = {
-        "theta": -3.11261921863153,
-        "y": 15.1175747530841,
-        "x": 13.8045063646178
-    }
-    
-    iiwa_pos = {
-        "A": 0.9958027493802584,
-        "B": -1.1460030984288971,
-        "C": -3.0969707570353333,
-        "z": 367.20846727302757,
-        "y": 436.77502247355704,
-        "x": -350.20044956752224
-    }
-
-    # Calculate camera pose in world coordinates
-    T_world_cam = utils.calculate_camera_in_world(kmr_pose, iiwa_pos)
-    if T_world_cam is None:
-        print("Failed to calculate camera pose in world coordinates.")
-    else:
-        print("\nCamera pose in world:")
-        print(np.round(T_world_cam, 3))
-
-        # Calculate object pose in world coordinates
-        # T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
-        print("\nObject pose in world:")
-        print(np.round(T_world_obj, 3))
-        
-        # Calculate IIWA base in world
-        T_world_iiwabase = utils.get_T_world_iiwabase(kmr_pose)
-        print("\nIIWA base in world:")
-        print(np.round(T_world_iiwabase, 3))
-        
-        # Calculate inverse transform of IIWA base in world
-        T_inv_world_iiwabase = utils.inverse_homogeneous_transform(T_world_iiwabase)
-        
-        # Calculate object pose in IIWA base frame
-        T_iiwabase_obj = T_inv_world_iiwabase @ T_world_obj
-        print("\nObject pose in IIWA base frame:")
-        print(np.round(T_iiwabase_obj, 3))
-        
-        # Load the grasp transformation matrices from JSON file
-        file_path = "image_processing\\calibration_data\\Mustard_grabbing.json"
-        grasp_data = utils.load_json_data(file_path)
-        
-        if grasp_data:
-            T_object_ee_grasp = np.array(grasp_data["T_object_ee_grasp"])
-            T_object_ee_before_grasp = np.array(grasp_data["T_object_ee_before_grasp"])
-            
-            # Calculate grasp poses in IIWA base frame
-            T_iiwabase_ee_before_grasp = T_iiwabase_obj @ T_object_ee_before_grasp
-            T_iiwabase_ee_grasp = T_iiwabase_obj @ T_object_ee_grasp
-            
-            print("\nPre-grasp pose in IIWA base frame:")
-            print(np.round(T_iiwabase_ee_before_grasp, 3))
-            
-            print("\nGrasp pose in IIWA base frame:")
-            print(np.round(T_iiwabase_ee_grasp, 3))
-            
-            # Extract position and orientation for robot control
-            position_before_grasp = T_iiwabase_ee_before_grasp[0:3, 3]
-            position_grasp = T_iiwabase_ee_grasp[0:3, 3]
-            
-            # Convert rotation matrices to Euler angles (ZYX convention for API)
-            try:
-                orientation_before_grasp = utils.rotation_matrix_to_euler_zyx(T_iiwabase_ee_before_grasp[0:3, 0:3])
-                orientation_grasp = utils.rotation_matrix_to_euler_zyx(T_iiwabase_ee_grasp[0:3, 0:3])
-                
-                print("\nPre-grasp position and orientation (XYZ, ABC):")
-                print(f"Position (mm): {np.round(position_before_grasp, 1)}")
-                print(f"Orientation (rad): {np.round(orientation_before_grasp, 3)}")
-                
-                print("\nGrasp position and orientation (XYZ, ABC):")
-                print(f"Position (mm): {np.round(position_grasp, 1)}")
-                print(f"Orientation (rad): {np.round(orientation_grasp, 3)}")
-                
-                # These values can be directly passed to api.goto_position()
-                print("\nAPI command for pre-grasp pose:")
-                print(f"api.goto_position({position_before_grasp[0]}, {position_before_grasp[1]}, {position_before_grasp[2]}, "
-                      f"{orientation_before_grasp[0]}, {orientation_before_grasp[1]}, {orientation_before_grasp[2]})")
-                
-                print("\nAPI command for grasp pose:")
-                print(f"api.goto_position({position_grasp[0]}, {position_grasp[1]}, {position_grasp[2]}, "
-                      f"{orientation_grasp[0]}, {orientation_grasp[1]}, {orientation_grasp[2]})")
-            except Exception as e:
-                print(f"Error converting rotation matrices to Euler angles: {e}")
-        else:
-            print("Failed to load grasp transformation data from JSON file.")
+    utils.append_to_json_list(output_file_path, output_data)
 
 
 
@@ -1442,3 +1257,96 @@ def Go_to_the_position():
     print(f"{iiwa_pos=}")
 
     api.goto_position(t_iiwa_obj[0], t_iiwa_obj[1], t_iiwa_obj[2], iiwa_pos["A"], iiwa_pos["B"], iiwa_pos["C"])
+
+
+def visualize_transformations():
+    """
+    Loads a mesh and visualizes ALL grasp and pre-grasp poses
+    defined in the specified JSON file using Open3D coordinate frames.
+    Assumes specific relative paths for the JSON and OBJ files unless
+    overridden by absolute paths.
+    """
+    # --- Configuration ---
+    # Use the JSON for the mustard bottle poses
+    json_file_path = 'image_processing/grabbing_poses/mustard_bottle_grabbing.json'
+    json_file_path = 'image_processing/grabbing_poses/plug-in_outlet_expander_grabbing.json'
+
+    # Select the object file to visualize (using your provided absolute path)
+    # obj_file_path = 'YCB_Objects/006_mustard_bottle/google_16k/textured.obj' # Original path
+    obj_file_path = "C:\\Users\\siram\\OneDrive\\Plocha\\Skola - CVUT\\4.semestr Mag\\Diplomka\\KMR-object-manipulation-with-LLMs\\gripping\\test_objects_vis\\obj_000005.obj"
+
+    obj_file_path = "C:\\Users\\siram\\OneDrive\\Plocha\\Skola - CVUT\\4.semestr Mag\\Diplomka\\KMR-object-manipulation-with-LLMs\\YCB_Objects\\plug-in outlet expander\\meshes\\plug-in outlet expander\\obj_000021.ply"
+
+    # Visualization parameters
+    axis_size = 50.0  # Size of the coordinate axes in mm (adjust as needed)
+    # You might want smaller axes if many poses overlap
+    # axis_size = 30.0
+
+    # --- Load Data ---
+    # Load JSON
+    with open(json_file_path, 'r') as f:
+        grasping_data_list = json.load(f) # Load the whole list of poses
+
+    # --- Load Mesh ---
+    print(f"Loading mesh: {obj_file_path}")
+    mesh = o3d.io.read_triangle_mesh(obj_file_path, enable_post_processing=True)
+    # Optional: Assign a uniform color if textures/materials don't load properly
+    # mesh.paint_uniform_color([0.7, 0.7, 0.7])
+    mesh.compute_vertex_normals() # Helps with shading
+    print(f"Successfully loaded mesh.")
+
+    # --- Create Geometries (Mesh + All Pose Frames) ---
+    geometries_to_draw = [mesh] # Start the list with the mesh
+
+    print(f"Processing {len(grasping_data_list)} pose entries from {os.path.basename(json_file_path)}...")
+
+    # Iterate through each pose dictionary in the loaded list
+    for i, pose_info in enumerate(grasping_data_list):
+        pose_name = pose_info.get("grabbing_pose_name", f"Pose {i+1}") # Get name or use index
+        print(f"  Adding frames for: {pose_name}")
+
+        # Extract and convert transformation matrices to numpy arrays
+        T_object_ee_grasp = np.array(pose_info["T_object_ee_grasp"], dtype=np.float64)
+        T_object_ee_before_grasp = np.array(pose_info["T_object_ee_before_grasp"], dtype=np.float64)
+
+        # Create a frame for the grasp pose
+        grasp_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=axis_size, origin=[0, 0, 0]
+        )
+        grasp_frame.transform(T_object_ee_grasp) # Apply the transformation
+        geometries_to_draw.append(grasp_frame) # Add to the list
+
+        # Create a frame for the pre-grasp pose
+        before_grasp_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=axis_size, origin=[0, 0, 0]
+        )
+        # Slightly offset pre-grasp frame for better visibility if needed (optional)
+        # Example: Move it slightly along its own Z-axis before applying the main transform
+        # offset_transform = np.identity(4)
+        # offset_transform[2, 3] = -axis_size * 0.2 # Move back 20% of axis size
+        # combined_transform = T_object_ee_before_grasp @ offset_transform
+        # before_grasp_frame.transform(combined_transform)
+        before_grasp_frame.transform(T_object_ee_before_grasp) # Apply the transformation
+        geometries_to_draw.append(before_grasp_frame) # Add to the list
+
+    # Optional: Create a frame for the object's origin itself
+    # object_origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+    #     size=axis_size * 0.75, origin=[0, 0, 0] # Slightly larger/different size
+    # )
+    # geometries_to_draw.append(object_origin_frame)
+
+    # --- Visualize ---
+    print(f"\nVisualizing mesh: {os.path.basename(obj_file_path)}")
+    print(f"Displaying {len(grasping_data_list)*2} pose frames (grasp + pre-grasp for each entry).")
+
+    o3d.visualization.draw_geometries(
+        geometries_to_draw, # Pass the list containing mesh + all frames
+        window_name=f"Grasp Visualization ({os.path.basename(obj_file_path)})",
+        width=1280,
+        height=960,
+        mesh_show_back_face=True
+    )
+    print("Visualization window closed.")
+
+
+
