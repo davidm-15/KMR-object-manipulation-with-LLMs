@@ -242,12 +242,22 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
     # --- Gripper Page ---
     gripper_frame = ttk.Frame(notebook, padding="10")
     notebook.add(gripper_frame, text="Gripper & LED")
-
     grip_buttons_frame = ttk.Frame(gripper_frame)
     grip_buttons_frame.pack(pady=10)
     ttk.Button(grip_buttons_frame, text="Initialize Gripper", command=api.init_gripper).pack(side=tk.LEFT, padx=5, pady=5)
     ttk.Button(grip_buttons_frame, text="Open Gripper", command=api.open_gripper).pack(side=tk.LEFT, padx=5, pady=5)
-    ttk.Button(grip_buttons_frame, text="Close Gripper", command=lambda: api.close_gripper(force=1)).pack(side=tk.LEFT, padx=5, pady=5)
+    
+    # Force input frame
+    force_frame = ttk.Frame(grip_buttons_frame)
+    force_frame.pack(side=tk.LEFT, padx=5, pady=5)
+    ttk.Label(force_frame, text="Force:").pack(side=tk.LEFT)
+    force_entry = ttk.Entry(force_frame, width=5)
+    force_entry.pack(side=tk.LEFT, padx=2)
+    force_entry.insert(0, "1")  # Default value
+    
+    # Close gripper with specified force
+    ttk.Button(grip_buttons_frame, text="Close Gripper", 
+               command=lambda: api.close_gripper(force=int(force_entry.get()))).pack(side=tk.LEFT, padx=5, pady=5)
 
     # --- ADD THIS LINE ---
     ttk.Button(grip_buttons_frame, text="Release Object", command=api.release_object).pack(side=tk.LEFT, padx=5, pady=5)

@@ -12,6 +12,7 @@ from . import sequences
 from . import gui
 
 # run me with python -m KMR_communication.main --mode sequence --item "mustard bottle" --clean
+# python -m KMR_communication.main --mode gui
 # plug-in outlet expander
 def main():
     # Set numpy print options
@@ -19,7 +20,7 @@ def main():
 
     # Argument Parser (optional, to choose between GUI and sequences)
     parser = argparse.ArgumentParser(description="KUKA KMR IIWA Control Interface")
-    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object", "scan", "estimate"],
+    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object", "scan", "estimate", "calc", "viz"],
                         help="Operation mode: 'gui', 'sequence', 'calibrate', 'pick'")
     parser.add_argument('--item', type=str, default='plug-in outlet expander', #'foam brick', #'mustard bottle',
                         help="Item name for detection/pose estimation in sequence mode")
@@ -52,8 +53,12 @@ def main():
             # api.IsPositionInZone(13.666, 14.643, 179.0876, 4)
         elif args.mode == 'estimate':
             sequences.estimate_the_transformation()
+        elif args.mode == 'viz':
+            sequences.visualize_transformations()
         elif args.mode == 'scan':
-            sequences.find_object_6D_pose(camera_handler=cam_handler)
+            sequences.find_object_6D_pose(camera_handler=cam_handler, detection_item="plug-in outlet expander")
+        elif args.mode == 'calc':
+            sequences.Object_to_world()
         elif args.mode == 'sequence':
             print(f"Starting Execution Sequence mode for item: '{args.item}'")
             # Define sequence parameters

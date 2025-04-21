@@ -3,6 +3,9 @@ from image_processing.rexseek_handler import RexSeekHandler
 from image_processing.grounding_dino_handler import GroundingDINOHandler
 from image_processing.lisa_handler import LISAHandler
 from image_processing.midas_handler import MiDaSHandler
+from image_processing.owlwit_handler import OwlViTHandler
+from image_processing.owlv2_handler import Owlv2Handler
+
 import json
 import os
 from pathlib import Path
@@ -14,8 +17,9 @@ from PIL import ImageDraw
 # Run me with python -m image_processing.compare_detection
 
 MODEL_CLASSES = {
-    "glamm": GLAMMHandler,
     "rexseek": RexSeekHandler,
+    "owlvit": OwlViTHandler,
+    "owlv2": Owlv2Handler,
     "grounding_dino": GroundingDINOHandler,
     "lisa": LISAHandler,
 }
@@ -45,7 +49,7 @@ def delete_detections():
 def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_name = "glamm"
+    model_name = "grounding_dino"
     model_handler = MODEL_CLASSES[model_name](device)
     
     base_path = Path("images/ScannedObjects/ScannedObjects/Stationary")
