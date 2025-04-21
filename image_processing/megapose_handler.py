@@ -14,6 +14,7 @@ import run_inference_on_example
 from megapose.datasets.scene_dataset import CameraData, ObjectData
 from megapose.lib3d.transform import Transform
 from PIL import ImageDraw
+from datetime import datetime
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -69,6 +70,8 @@ class MegaPoseHandler:
         image_path = object_folder / "image_rgb.png"
         image.save(image_path)
 
+        time = datetime.now().strftime("%H_%M_%S")
+
         if DoVis:
             # Draw bounding box on the image and save it
             draw = ImageDraw.Draw(image)
@@ -78,7 +81,7 @@ class MegaPoseHandler:
             # Save the image with the bounding box overlay
             visualization_path = object_folder / "visualizations"
             os.makedirs(visualization_path, exist_ok=True)
-            bbox_image_path = visualization_path / "image_with_bbox.png"
+            bbox_image_path = visualization_path / f"image_with_bbox_{time}.png"
             image.save(bbox_image_path)
 
             logging.info(f"Saved image with bounding box overlay to {bbox_image_path}.")
@@ -121,7 +124,7 @@ class MegaPoseHandler:
         object_data = [{"label": label, "pose": pose.tolist()} for label, pose in zip(labels, poses)]
 
         if DoVis:
-            vis = run_inference_on_example.my_visualization(object_folder, out_path / "visualizations")
+            vis = run_inference_on_example.my_visualization(object_folder, out_path / "visualizations", time=time)
             # return {"visualization": vis, "poses": object_data}
 
         return {"poses": object_data}
