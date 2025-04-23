@@ -27,6 +27,10 @@ image_processing/calibration_data/*
 KMR_communication/*
 !KMR_communication/*.py
 
+!handlers/
+handlers/*
+!handlers/*.py
+
 !KMRcode/
 KMRcode/*
 !KMRcode/*.java

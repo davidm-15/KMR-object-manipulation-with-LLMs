@@ -37,6 +37,12 @@ class Owlv2Handler:
         bounding_boxes = [[int(box[0]), int(box[1]), int(box[2]), int(box[3])] for box in boxes]
         detected_labels = [prompts[label] for label in labels]
         confidences = [float(score) for score in scores]
+
+        # Sort results by confidence score (descending)
+        sorted_indices = torch.argsort(scores, descending=True)
+        bounding_boxes = [bounding_boxes[i] for i in sorted_indices]
+        detected_labels = [detected_labels[i] for i in sorted_indices]
+        confidences = [confidences[i] for i in sorted_indices]
         
         return {
             "bounding_boxes": bounding_boxes,

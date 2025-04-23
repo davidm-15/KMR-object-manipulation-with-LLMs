@@ -1,5 +1,4 @@
-from image_processing.glamm_handler import GLAMMHandler
-from image_processing.rexseek_handler import RexSeekHandler
+# from image_processing.rexseek_handler import RexSeekHandler
 from image_processing.grounding_dino_handler import GroundingDINOHandler
 from image_processing.lisa_handler import LISAHandler
 from image_processing.midas_handler import MiDaSHandler
@@ -17,7 +16,7 @@ from PIL import ImageDraw
 # Run me with python -m image_processing.compare_detection
 
 MODEL_CLASSES = {
-    "rexseek": RexSeekHandler,
+    # "rexseek": RexSeekHandler,
     "owlvit": OwlViTHandler,
     "owlv2": Owlv2Handler,
     "grounding_dino": GroundingDINOHandler,
@@ -49,7 +48,7 @@ def delete_detections():
 def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model_name = "grounding_dino"
+    model_name = "owlv2"
     model_handler = MODEL_CLASSES[model_name](device)
     
     base_path = Path("images/ScannedObjects/ScannedObjects/Stationary")
@@ -77,7 +76,6 @@ def main():
 
                     if detections["bounding_boxes"] != []:
 
-
                         for detection in detections["bounding_boxes"]:
                             box = detection
 
@@ -102,6 +100,7 @@ def main():
             with open(json_path, "w") as json_file:
                 json.dump(detection_data, json_file, indent=4)
     
+        break
 
 
 
