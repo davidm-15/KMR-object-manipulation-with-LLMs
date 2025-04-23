@@ -64,11 +64,12 @@ def main():
             # Define sequence parameters
             sequences.execute_sequence(
                 cam_handler,
-                Only_current=True,
+                Only_current=False,
                 do_camera_around=True,
                 take_images=True,
                 do_detection=True,
                 do_6d_estimation=True,
+                go_to_object=True,
                 detection_item=args.item,
                 clean_folder=args.clean,
                 output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
@@ -83,8 +84,8 @@ def main():
         elif args.mode == 'calibrate':
              print("Starting Calibration Capture mode...")
              sequences.move_to_hand_poses_and_capture(
-                 cam_handler,
-                 num_sets=5 # Or get from args
+                cam_handler,
+                num_sets=1 # Or get from args
              )
         elif args.mode == 'pick':
             print("Starting JustPickIt Sequence mode...")

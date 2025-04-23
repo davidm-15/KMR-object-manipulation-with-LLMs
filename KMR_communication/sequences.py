@@ -15,6 +15,7 @@ from communication.client import send_image_to_server
 from communication.client import send_for_pose_estimation
 from scipy.spatial.transform import Rotation as R
 from robot import iiwa
+import utils.image_utils as image_utils
 
 def get_current_state_data(camera_handler: CameraHandler, image_filename_base: str) -> dict | None:
     """Captures image, gets robot state, and prepares data dict for saving."""
@@ -527,8 +528,8 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
 
     T_world_obj_list = None 
     for i, pose in enumerate(Poses):
-        if i < 8:
-            continue
+        # if i < 8:
+        #     continue
         # Make sure keys match API requirements ('A1'...'A7')
         print(f"Moving to pose {i+1}/{len(Poses)}: { {k: round(v, 3) for k, v in pose.items() if k != 'speed'} }")
         try:
@@ -578,6 +579,7 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     take_images = kwargs.get("take_images", False) # Default to False
     do_detection = kwargs.get("do_detection", True) # Default to True
     do_6d_estimation = kwargs.get("do_6d_estimation", True) # Default to True
+    go_to_object = kwargs.get("go_to_object", True) # Default to True
     detection_item = kwargs.get("detection_item", "mustard bottle")
     clean_folder = kwargs.get("clean_folder", False) # Renamed from clean_fodler
     json_filename = kwargs.get("json_filename", "sequence_data.json") # Use a different default filename
@@ -626,44 +628,118 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     T_world_obj = np.array(T_world_obj_list)
 
-    
-    drive_to_object(T_world_obj)
+    if go_to_object:    
+        drive_to_object(T_world_obj)
 
     just_grab_the_object(T_world_obj)
 
 
     return T_world_obj_list
 
-def just_grab_the_object(T_world_obj):
+def just_grab_the_object(T_world_obj, **kwargs):
+    use_before_grasp = kwargs.get("use_before_grasp", True)
 
 
-    # Function to move to the pre-grasp position from the calibration file
-    file_path = "image_processing\\calibration_data\\before_gripping_pose.json"
+    if use_before_grasp:
+        # Function to move to the pre-grasp position from the calibration file
+        file_path = "image_processing\\calibration_data\\before_gripping_pose.json"
+            
+        with open(file_path, "r") as f:
+            joint_data = json.load(f)
+            
+        joints = joint_data[0]["joints"]  # Access the first element in the list
+
+        response = api.goto_joint(
+            joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+            joints["A5"], joints["A6"], joints["A7"]
+        )
         
-    with open(file_path, "r") as f:
-        joint_data = json.load(f)
-        
-    joints = joint_data[0]["joints"]  # Access the first element in the list
-
-    response = api.goto_joint(
-        joints["A1"], joints["A2"], joints["A3"], joints["A4"],
-        joints["A5"], joints["A6"], joints["A7"]
-    )
-        
-    if response and response.ok and response.text.strip() == "OK":
-        print("Successfully moved to pre-grasp position")
-        time.sleep(3)  # Allow time for the robot to settle
-    else:
-        print(f"Failed to move to pre-grasp position: {response.text if response else 'No response'}")
+        if response and response.ok and response.text.strip() == "OK":
+            print("Successfully moved to pre-grasp position")
+            time.sleep(3)  # Allow time for the robot to settle
+        else:
+            print(f"Failed to move to pre-grasp position: {response.text if response else 'No response'}")
 
 
-
-    file_path = "image_processing\\calibration_data\\Mustard_grabbing.json"
+    file_path = "image_processing\\grabbing_poses\\mustard_bottle_grabbing.json"
     data = utils.load_json_data(file_path)
     iiwa_robot = iiwa.IIWA()
 
-    T_object_ee_grasp = np.array(data["T_object_ee_grasp"])
-    T_object_ee_before_grasp = np.array(data["T_object_ee_before_grasp"])
+    # Load all grasp poses from the JSON file
+    grasp_data = utils.load_json_data(file_path)
+    
+    if not isinstance(grasp_data, list) or not grasp_data:
+        print(f"Error: No valid grasp data found in {file_path}")
+        return
+    
+    print(f"Loaded {len(grasp_data)} grasp poses")
+    
+    # Get current end effector position
+    current_ee_pose = api.get_iiwa_position()
+    if not current_ee_pose:
+        print("Error: Failed to get current end effector position")
+        return
+        
+    # Current end effector position as array for distance calculation
+    current_ee_pos = np.array([current_ee_pose['x'], current_ee_pose['y'], current_ee_pose['z']])
+    
+    # Calculate all possible grasp positions in the world frame and their distances
+    grasp_options = []
+    
+    for i, grasp in enumerate(grasp_data):
+        # Calculate pre-grasp position in world frame
+        T_world_obj_entry = np.array(grasp["T_world_obj"])
+        T_object_ee_before_grasp = np.array(grasp["T_object_ee_before_grasp"])
+        
+        # Calculate where the pre-grasp position would be in world coordinates
+        T_world_ee_before_grasp = T_world_obj @ T_object_ee_before_grasp
+        
+        # Extract position part (translation vector)
+        world_ee_pos = T_world_ee_before_grasp[:3, 3]
+        
+        # Calculate distance to current end effector position
+        # Convert world position to iiwa base frame for comparison
+        kmr_pose_m_rad = api.get_pose()
+        T_world_iiwabase = utils.get_T_world_iiwabase(kmr_pose_m_rad)
+        T_inv_world_iiwabase = utils.inverse_homogeneous_transform(T_world_iiwabase)
+        T_iiwabase_ee = T_inv_world_iiwabase @ T_world_ee_before_grasp
+        iiwa_ee_pos = T_iiwabase_ee[:3, 3]
+        
+        # Calculate distance in iiwa base frame
+        distance = np.linalg.norm(iiwa_ee_pos - current_ee_pos)
+        
+        grasp_option = {
+            'index': i,
+            'grasp_name': grasp.get('grabbing_pose_name', f"Grasp {i}"),
+            'distance': distance,
+            'T_world_obj': T_world_obj_entry,
+            'T_object_ee_before_grasp': T_object_ee_before_grasp,
+            'T_object_ee_grasp': np.array(grasp["T_object_ee_grasp"]),
+            'T_world_ee_before_grasp': T_world_ee_before_grasp
+        }
+        grasp_options.append(grasp_option)
+    
+    # Sort grasp options by distance (closest first)
+    sorted_options = sorted(grasp_options, key=lambda x: x['distance'])
+    
+    print("\nGrasp options sorted by distance to current end effector position:")
+    for i, option in enumerate(sorted_options):
+        print(f"{i+1}. {option['grasp_name']} - Distance: {option['distance']:.2f}mm")
+    
+    # Select the closest grasp
+    selected_grasp = sorted_options[0]
+    print(f"\nSelected grasp: {selected_grasp['grasp_name']} (distance: {selected_grasp['distance']:.2f}mm)")
+    
+    # Use the selected grasp's transformation matrices
+    # T_world_obj = selected_grasp['T_world_obj']
+    T_object_ee_before_grasp = selected_grasp['T_object_ee_before_grasp']
+    T_object_ee_grasp = selected_grasp['T_object_ee_grasp']
+    
+    print(f"Using object pose in world:\n{np.round(T_world_obj, 3)}")
+    print(f"Using object-to-ee pre-grasp transform:\n{np.round(T_object_ee_before_grasp, 3)}")
+    print(f"Using object-to-ee grasp transform:\n{np.round(T_object_ee_grasp, 3)}")
+
+
 
     T_world_ee_before_grasp = T_world_obj @ T_object_ee_before_grasp
     T_world_ee_grasp = T_world_obj @ T_object_ee_grasp
@@ -713,8 +789,11 @@ def just_grab_the_object(T_world_obj):
     R_grasp = T_iiwabase_ee_grasp[0:3, 0:3]
 
     try:
-        orientation_before_grasp = utils.rotation_matrix_to_euler_zyx(R_before_grasp) # [roll, pitch, yaw]
-        orientation_grasp = utils.rotation_matrix_to_euler_zyx(R_grasp)               # [roll, pitch, yaw]
+        # orientation_before_grasp = utils.rotation_matrix_to_euler_zyx(R_before_grasp) # [roll, pitch, yaw]
+        # orientation_grasp = utils.rotation_matrix_to_euler_zyx(R_grasp)               # [roll, pitch, yaw]
+        orientation_before_grasp = image_utils.rotation_matrix_to_xyz_extrinsic(R_before_grasp) # [roll, pitch, yaw]
+        orientation_grasp = image_utils.rotation_matrix_to_xyz_extrinsic(R_grasp)               # [roll, pitch, yaw]
+
     except Exception as e:
         print(f"Error converting rotation matrix to Euler angles: {e}")
         # Handle potential issues, e.g., gimbal lock if using Euler angles
@@ -733,25 +812,25 @@ def just_grab_the_object(T_world_obj):
     print(f"Response from IIWA API: {response.text}")
     print("-"*50)
 
-    if response.text == "failed":
-        iiwa_joints = api.get_iiwa_joint_position()
-        joints = np.array([iiwa_joints["A1"], iiwa_joints["A2"], iiwa_joints["A3"], iiwa_joints["A4"], iiwa_joints["A5"], iiwa_joints["A6"], iiwa_joints["A7"]])
-        print("IIWA solver failed to find a solution. Trying myself...")
+    # if response.text == "failed":
+    #     iiwa_joints = api.get_iiwa_joint_position()
+    #     joints = np.array([iiwa_joints["A1"], iiwa_joints["A2"], iiwa_joints["A3"], iiwa_joints["A4"], iiwa_joints["A5"], iiwa_joints["A6"], iiwa_joints["A7"]])
+    #     print("IIWA solver failed to find a solution. Trying myself...")
 
-        print(f"Current IIWA Joints: {joints}")
-        print(f"T_iiwabase_ee_before_grasp:\n{T_iiwabase_ee_before_grasp}")
-        theta_final, success, final_error, clamped_warning = iiwa_robot.inverse_kinematics_nr(T_iiwabase_ee_before_grasp, joints)
-
-
-        print(f"Inverse Kinematics successful: {theta_final}")
-        response = api.goto_joint(
-            theta_final[0], theta_final[1], theta_final[2],
-            theta_final[3], theta_final[4], theta_final[5], theta_final[6]
-        )
+    #     print(f"Current IIWA Joints: {joints}")
+    #     print(f"T_iiwabase_ee_before_grasp:\n{T_iiwabase_ee_before_grasp}")
+    #     theta_final, success, final_error, clamped_warning = iiwa_robot.inverse_kinematics_nr(T_iiwabase_ee_before_grasp, joints)
 
 
+    #     print(f"Inverse Kinematics successful: {theta_final}")
+    #     response = api.goto_joint(
+    #         theta_final[0], theta_final[1], theta_final[2],
+    #         theta_final[3], theta_final[4], theta_final[5], theta_final[6]
+    #     )
 
-        return
+
+
+    #     return
 
     print("Waiting after moving to pre-grasp...")
     time.sleep(10) # Use a non-blocking sleep if possible in a real application
@@ -826,7 +905,32 @@ def drive_to_object(T_world_obj):
 
     # Move the KMR to the new position
     print(f"Moving KMR to new position: {new_KMR_position}")
-    api.move(x_offset_kmr/1000, y_offset_kmr/1000, 0)
+    x_offset_kmr_m = x_offset_kmr / 1000  # Convert mm to meters
+    y_offset_kmr_m = y_offset_kmr / 1000  # Convert mm to meters
+    
+    # Max distance per move (m)
+    max_distance = 1.3
+    
+    # Calculate total movement distance
+    total_distance = np.sqrt(x_offset_kmr_m**2 + y_offset_kmr_m**2)
+    
+    if total_distance <= max_distance:
+        # If we're already within the limit, just move once
+        api.move(x_offset_kmr_m, y_offset_kmr_m, 0)
+    else:
+        # Calculate number of segments needed
+        num_segments = int(np.ceil(total_distance / max_distance))
+        print(f"Movement too large ({total_distance:.2f}m). Splitting into {num_segments} segments.")
+        
+        # Calculate movement per segment
+        x_segment = x_offset_kmr_m / num_segments
+        y_segment = y_offset_kmr_m / num_segments
+        
+        # Move in segments
+        for i in range(num_segments):
+            print(f"Movement segment {i+1}/{num_segments}: ({x_segment:.2f}m, {y_segment:.2f}m)")
+            api.move(x_segment, y_segment, 0)
+            time.sleep(3)  # Wait between movements
 
 
     print(f"Object position: {Object_position}")
@@ -917,6 +1021,7 @@ def save_calibration_image(camera_handler: CameraHandler, out_path: str):
         # Optionally delete the saved image if state is missing
         # os.remove(image_full_path)
         return
+    T_world_camera = utils.calculate_camera_in_world(kmr_pose, end_pose)
 
     # Prepare data for JSON
     data = {
@@ -924,8 +1029,8 @@ def save_calibration_image(camera_handler: CameraHandler, out_path: str):
         "timestamp": timestamp,
         "joints": joint_positions,
         "ee_pose_in_base": end_pose,
-        "kmr_pose_in_world": kmr_pose
-        # Consider adding T_world_camera here as well if useful for calibration
+        "kmr_pose_in_world": kmr_pose,
+        "T_world_camera": T_world_camera.tolist() if T_world_camera is not None else None,
     }
 
     # Append data to the JSON file
@@ -937,6 +1042,8 @@ def save_calibration_image(camera_handler: CameraHandler, out_path: str):
 def move_to_hand_poses_and_capture(camera_handler: CameraHandler, num_sets: int = 5):
     """Moves through predefined hand poses multiple times, capturing calibration data."""
     input_file = config.GO_AROUND_HAND_POSES_FILE # Use the same poses for this example
+
+    input_file = "communication\HandPoses.json"
 
     try:
         hand_poses_data = utils.load_json_data(input_file)
@@ -1129,34 +1236,21 @@ def align_A1_with_object(T_world_obj: np.ndarray):
 def just_pick_it_full_sequence():
     # Using the provided object-to-world transformation matrix
     object_in_world = np.array([
-        [-0.0319, 0.024, 0.9992, 12685.1941],
-        [-0.9895, 0.1401, -0.035, 15230.1932],
-        [-0.1409, -0.9898, 0.0193, 869.069],
+        [0.427, 0.903, -0.046, 12701.271],
+        [-0.904, 0.427, -0.002, 15262.575],
+        [0.018, 0.043, 0.999, 911.753],
         [0.0, 0.0, 0.0, 1.0]
     ])
 
+    object_in_world = np.array([
+        [0.427, 0.903, -0.046, 12601.271],
+        [-0.904, 0.427, -0.002, 15262.575],
+        [0.018, 0.043, 0.999, 911.753],
+        [0.0, 0.0, 0.0, 1.0]
+    ])
 
-    # Get the current KMR pose to calculate the IIWA base position in world
-    kmr_pose = api.get_pose()
-    if not kmr_pose:
-        print("Error: Failed to get KMR pose.")
-        return
+    just_grab_the_object(object_in_world)
 
-    # Calculate IIWA base position in world coordinates
-    iiwa_base_in_world_mm = utils.get_iiwa_base_in_world([kmr_pose['x'], kmr_pose['y'], kmr_pose['theta']])
-    
-    # Extract object position from transformation matrix
-    object_position = object_in_world[:3, 3]
-    
-    # Subtract IIWA base position from object position (only X,Y,Z)
-    object_relative_to_base = object_position - iiwa_base_in_world_mm
-    
-    print(f"Object position in world: {object_position}")
-    print(f"IIWA base position in world: {iiwa_base_in_world_mm}")
-    print(f"Object position relative to IIWA base: {object_relative_to_base}")
-
-
-    align_A1_with_object(object_in_world)
 
 
 def Object_to_world():
@@ -1269,13 +1363,13 @@ def visualize_transformations():
     # --- Configuration ---
     # Use the JSON for the mustard bottle poses
     json_file_path = 'image_processing/grabbing_poses/mustard_bottle_grabbing.json'
-    json_file_path = 'image_processing/grabbing_poses/plug-in_outlet_expander_grabbing.json'
+    # json_file_path = 'image_processing/grabbing_poses/plug-in_outlet_expander_grabbing.json'
 
     # Select the object file to visualize (using your provided absolute path)
     # obj_file_path = 'YCB_Objects/006_mustard_bottle/google_16k/textured.obj' # Original path
     obj_file_path = "C:\\Users\\siram\\OneDrive\\Plocha\\Skola - CVUT\\4.semestr Mag\\Diplomka\\KMR-object-manipulation-with-LLMs\\gripping\\test_objects_vis\\obj_000005.obj"
 
-    obj_file_path = "C:\\Users\\siram\\OneDrive\\Plocha\\Skola - CVUT\\4.semestr Mag\\Diplomka\\KMR-object-manipulation-with-LLMs\\YCB_Objects\\plug-in outlet expander\\meshes\\plug-in outlet expander\\obj_000021.ply"
+    # obj_file_path = "C:\\Users\\siram\\OneDrive\\Plocha\\Skola - CVUT\\4.semestr Mag\\Diplomka\\KMR-object-manipulation-with-LLMs\\YCB_Objects\\plug-in outlet expander\\meshes\\plug-in outlet expander\\obj_000021.ply"
 
     # Visualization parameters
     axis_size = 50.0  # Size of the coordinate axes in mm (adjust as needed)

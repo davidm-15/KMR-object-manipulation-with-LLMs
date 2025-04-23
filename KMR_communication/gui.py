@@ -288,7 +288,7 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
     ttk.Button(seq_frame, text="Run Calibration Capture Routine",
                command=lambda: sequences.move_to_hand_poses_and_capture(camera_handler)).pack(pady=5, fill='x')
     ttk.Button(seq_frame, text="Run JustPickIt Sequence",
-               command=lambda: sequences.just_pick_it_full_sequence(camera_handler)).pack(pady=5, fill='x')
+               command=lambda: sequences.just_pick_it_full_sequence()).pack(pady=5, fill='x')
 
 
     ttk.Separator(seq_frame, orient='horizontal').pack(fill='x', pady=15)

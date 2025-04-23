@@ -153,6 +153,9 @@ def rotation_matrix_to_euler_zyx(R_matrix):
     # The resulting angles are often called roll, pitch, yaw respectively.
     # Adjust 'zyx' if your API uses a different convention (e.g., 'xyz', 'zyz')
     euler_angles = r.as_euler('xyz', degrees=False) # Get radians
+
+
+
     return euler_angles # Returns [roll, pitch, yaw] or [a, b, c] depending on context
 
 
@@ -175,7 +178,10 @@ def calculate_end_effector_in_world(kmr_pose_m_rad: dict, iiwa_pose_mm_rad: dict
 
         angle = kmr_theta_rad - np.pi/2
 
-        rot_z = R.from_euler('z', angle, degrees=False).as_matrix()
+        # rot_z = R.from_euler('z', angle, degrees=False).as_matrix()
+        # print(f"rot_z: \n{rot_z}")
+        rot_z = utils.image_utils.get_rotation_matrix_z(angle)[:3, :3]
+        # print(f"rot_z: \n{rot_z}")
         T_world_iiwaBase = np.eye(4)
         T_world_iiwaBase[:3, :3] = rot_z
         T_world_iiwaBase[:3, 3] = iiwa_base_pos_mm
