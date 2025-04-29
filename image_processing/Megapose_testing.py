@@ -9,12 +9,12 @@ import argparse
 import json
 from megapose.datasets.scene_dataset import ObjectData
 from megapose.lib3d.transform import Transform
-from image_processing.megapose_handler import MegaPoseHandler
+from handlers.megapose_handler import MegaPoseHandler
 import os
 import torch
-from image_processing.rexseek_handler import RexSeekHandler
-from image_processing.grounding_dino_handler import GroundingDINOHandler
-from image_processing.lisa_handler import LISAHandler
+from handlers.rexseek_handler import RexSeekHandler
+from handlers.grounding_dino_handler import GroundingDINOHandler
+from handlers.lisa_handler import LISAHandler
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from PIL import Image
@@ -93,10 +93,19 @@ def test_megapose():
     run_inference_on_example.my_visualization(example_dir, out_path / "visualizations")
 
 def run_main():
+    # pos = main(
+    #     image_file="/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects/foam brick/image_rgb.png",
+    #     prompt="foam brick",
+    #     bbox=[996, 934, 1348, 1446],
+    #     DoVis=True)
+    
+    # print("Pose Result:\n", pos)
+
+
     pos = main(
-        image_file="/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects/foam brick/image_rgb.png",
-        prompt="foam brick",
-        bbox=[996, 934, 1348, 1446],
+        image_file="/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects/cracker box/image_rgb.png",
+        prompt="cracker box",
+        bbox=[894, 1406, 1078, 1655],
         DoVis=True)
     
     print("Pose Result:\n", pos)

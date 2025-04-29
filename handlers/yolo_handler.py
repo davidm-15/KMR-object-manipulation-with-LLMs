@@ -61,8 +61,6 @@ class YOLOHandler:
         # Map class IDs to class names
         class_names = [self.class_names[cls_id] for cls_id in class_ids]
 
-        print(f"Class names: {class_names}")
-
         if prompt in class_names:
             # Filter results based on the prompt
             filtered_indices = [i for i, name in enumerate(class_names) if name == prompt]
@@ -82,7 +80,7 @@ class YOLOHandler:
 
         return {
             "bounding_boxes": bounding_boxes,
-            "confidences": confidences,
+            "scores": confidences,
             "class_ids": class_ids,
             "class_names": class_names
         }

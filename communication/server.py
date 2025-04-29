@@ -5,10 +5,10 @@ import logging
 import torch
 import json
 from flask import Flask, request, jsonify
-from image_processing.grounding_dino_handler import GroundingDINOHandler
-from image_processing.lisa_handler import LISAHandler
-from image_processing.midas_handler import MiDaSHandler
-from image_processing.yolo_handler import YOLOHandler
+from handlers.grounding_dino_handler import GroundingDINOHandler
+from handlers.lisa_handler import LISAHandler
+from handlers.midas_handler import MiDaSHandler
+from handlers.yolo_handler import YOLOHandler
 from PIL import Image
 import subprocess
 import re
@@ -161,7 +161,6 @@ def create_app(model_name):
             text=True
         )
 
-        # Save the subprocess result using pickle for debugging
 
         json_path = os.path.join(megapose_path, object_name)
         os.makedirs(json_path, exist_ok=True)
