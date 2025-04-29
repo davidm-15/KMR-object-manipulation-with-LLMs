@@ -35,6 +35,9 @@ handlers/*
 KMRcode/*
 !KMRcode/*.java
 
+!object_models/
+
+
 !APIs/
 APIs/*
 !APIs/*.py

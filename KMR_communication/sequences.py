@@ -631,7 +631,7 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     if go_to_object:    
         drive_to_object(T_world_obj)
 
-    just_grab_the_object(T_world_obj)
+    # just_grab_the_object(T_world_obj)
 
 
     return T_world_obj_list
@@ -1255,9 +1255,9 @@ def just_pick_it_full_sequence():
 
 def Object_to_world():
 
-    grabbing_pose_name = "down, side right"
+    grabbing_pose_name = "front_right"
 
-    out_name = "plug-in_outlet_expander_grabbing.json"
+    out_name = "box of jello grabbing.json"
 
     # Load the object pose from the JSON file
     object_pose_file = "image_processing\\grabbing_poses\\current_object_pose.json"
@@ -1360,14 +1360,21 @@ def visualize_transformations():
     Assumes specific relative paths for the JSON and OBJ files unless
     overridden by absolute paths.
     """
-    # --- Configuration ---
-    # Use the JSON for the mustard bottle poses
-    json_file_path = 'image_processing/grabbing_poses/mustard_bottle_grabbing.json'
-    # json_file_path = 'image_processing/grabbing_poses/plug-in_outlet_expander_grabbing.json'
+    objects = {1:"box of jello",
+               2: "cracker box",
+               3: "foam brick",
+               4: "gray box",
+               5: "lego brick",
+               6: "mustard bottle",
+               7: "plug-in outlet expander",
+               8: "tuna fish can"}
+    
+    object_id = 1
 
-    # Select the object file to visualize (using your provided absolute path)
-    # obj_file_path = 'YCB_Objects/006_mustard_bottle/google_16k/textured.obj' # Original path
-    obj_file_path = "C:\\Users\\siram\\OneDrive\\Plocha\\Skola - CVUT\\4.semestr Mag\\Diplomka\\KMR-object-manipulation-with-LLMs\\gripping\\test_objects_vis\\obj_000005.obj"
+    base_path = "object_models"
+    json_file_path = os.path.join(base_path, f"{objects[object_id]}/grab_poses/grab_poses.json")
+    obj_file_path = os.path.join(base_path, f"{objects[object_id]}/mesh/{objects[object_id]}.ply")
+
 
     # obj_file_path = "C:\\Users\\siram\\OneDrive\\Plocha\\Skola - CVUT\\4.semestr Mag\\Diplomka\\KMR-object-manipulation-with-LLMs\\YCB_Objects\\plug-in outlet expander\\meshes\\plug-in outlet expander\\obj_000021.ply"
 

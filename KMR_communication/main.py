@@ -40,7 +40,7 @@ def main():
     if not cam_handler.is_ready():
         print("CRITICAL ERROR: Camera initialization failed. Exiting.")
         # Optionally, allow running GUI without camera?
-        if args.mode == 'gui' or args.mode == 'sequence' or args.mode == 'pick' or args.mode == "scan" or args.mode == "estimate":
+        if args.mode == 'gui' or args.mode == 'sequence' or args.mode == 'pick' or args.mode == "scan" or args.mode == "estimate" or args.mode == "calc" or args.mode == "viz":
             print("Running  without camera functionality.")
         else:
             return
@@ -56,7 +56,7 @@ def main():
         elif args.mode == 'viz':
             sequences.visualize_transformations()
         elif args.mode == 'scan':
-            sequences.find_object_6D_pose(camera_handler=cam_handler, detection_item="plug-in outlet expander")
+            sequences.find_object_6D_pose(camera_handler=cam_handler, detection_item="box of jello")
         elif args.mode == 'calc':
             sequences.Object_to_world()
         elif args.mode == 'sequence':
@@ -64,12 +64,12 @@ def main():
             # Define sequence parameters
             sequences.execute_sequence(
                 cam_handler,
-                Only_current=False,
+                Only_current=True,
                 do_camera_around=True,
                 take_images=True,
                 do_detection=True,
                 do_6d_estimation=True,
-                go_to_object=True,
+                go_to_object=False,
                 detection_item=args.item,
                 clean_folder=args.clean,
                 output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
