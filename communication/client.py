@@ -8,7 +8,8 @@ SERVER_URL_POSE = "http://localhost:5000/estimate_pose"
 
 INPUT_FOLDER = "images/JustPickIt/"
 OUTPUT_FOLDER = "images/JustPickIt/output/"
-PROMPT = "mustard bottle"
+PROMPT = "cracker box"
+# PROMPT = "mustard bottle"
 
 # Run me with python -m communication.client
 
@@ -66,6 +67,8 @@ def process_images():
             continue
         print(f"{PROMPT} found in image: {filename} !!")
         print("Going for 6D Pose Estimation")
+
+        print(f"Bounding Boxes: {bounding_boxes}")
 
         # Send full image with bounding boxes for 6D pose estimation
         pose_result = send_for_pose_estimation(image_data, bounding_boxes[0], PROMPT)
