@@ -35,7 +35,9 @@ handlers/*
 KMRcode/*
 !KMRcode/*.java
 
-!object_models/
+!object_models/*/grab_poses/
+!object_models/*/mesh/
+
 
 
 !APIs/

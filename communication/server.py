@@ -128,6 +128,7 @@ def create_app(model_name):
     @app.route("/estimate_pose", methods=["POST"])
     def estimate_pose_route():
         megapose_path = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects"
+        megapose_path = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/object_models"
         """6D pose estimation via Flask."""
         if "image" not in request.files or "object_name" not in request.form or "bbox" not in request.form:
             return jsonify({"error": "Missing image, object_name, or bbox"}), 400

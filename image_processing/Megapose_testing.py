@@ -41,6 +41,7 @@ def main(**kwargs):
     DoVis = kwargs.get("DoVis", False)
 
     megapose_path = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects"
+    megapose_path = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/object_models"
 
     pose_handler = MegaPoseHandler(device, megapose_path)
 
