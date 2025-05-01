@@ -528,8 +528,8 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
 
     T_world_obj_list = None 
     for i, pose in enumerate(Poses):
-        # if i < 8:
-        #     continue
+        if i < 8:
+            continue
         # Make sure keys match API requirements ('A1'...'A7')
         print(f"Moving to pose {i+1}/{len(Poses)}: { {k: round(v, 3) for k, v in pose.items() if k != 'speed'} }")
         try:
@@ -631,13 +631,14 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     if go_to_object:    
         drive_to_object(T_world_obj)
 
-    # just_grab_the_object(T_world_obj)
+    just_grab_the_object(T_world_obj, prompt=detection_item)
 
 
     return T_world_obj_list
 
 def just_grab_the_object(T_world_obj, **kwargs):
-    use_before_grasp = kwargs.get("use_before_grasp", True)
+    use_before_grasp = kwargs.get("use_before_grasp", False)
+    prompt = kwargs.get("prompt", "mustard bottle")
 
 
     if use_before_grasp:
@@ -661,7 +662,9 @@ def just_grab_the_object(T_world_obj, **kwargs):
             print(f"Failed to move to pre-grasp position: {response.text if response else 'No response'}")
 
 
-    file_path = "image_processing\\grabbing_poses\\mustard_bottle_grabbing.json"
+    file_path = "object_models\\" + prompt + "\\grab_poses\\grab_poses.json"
+
+
     data = utils.load_json_data(file_path)
     iiwa_robot = iiwa.IIWA()
 
@@ -688,14 +691,13 @@ def just_grab_the_object(T_world_obj, **kwargs):
     
     for i, grasp in enumerate(grasp_data):
         # Calculate pre-grasp position in world frame
-        T_world_obj_entry = np.array(grasp["T_world_obj"])
         T_object_ee_before_grasp = np.array(grasp["T_object_ee_before_grasp"])
         
         # Calculate where the pre-grasp position would be in world coordinates
         T_world_ee_before_grasp = T_world_obj @ T_object_ee_before_grasp
         
         # Extract position part (translation vector)
-        world_ee_pos = T_world_ee_before_grasp[:3, 3]
+        # world_ee_pos = T_world_ee_before_grasp[:3, 3]
         
         # Calculate distance to current end effector position
         # Convert world position to iiwa base frame for comparison
@@ -712,7 +714,6 @@ def just_grab_the_object(T_world_obj, **kwargs):
             'index': i,
             'grasp_name': grasp.get('grabbing_pose_name', f"Grasp {i}"),
             'distance': distance,
-            'T_world_obj': T_world_obj_entry,
             'T_object_ee_before_grasp': T_object_ee_before_grasp,
             'T_object_ee_grasp': np.array(grasp["T_object_ee_grasp"]),
             'T_world_ee_before_grasp': T_world_ee_before_grasp
@@ -1255,9 +1256,9 @@ def just_pick_it_full_sequence():
 
 def Object_to_world():
 
-    grabbing_pose_name = "front_right"
+    grabbing_pose_name = "up"
 
-    out_name = "box of jello grabbing.json"
+    out_name = "lego brick.json"
 
     # Load the object pose from the JSON file
     object_pose_file = "image_processing\\grabbing_poses\\current_object_pose.json"
@@ -1369,7 +1370,7 @@ def visualize_transformations():
                7: "plug-in outlet expander",
                8: "tuna fish can"}
     
-    object_id = 1
+    object_id = 8
 
     base_path = "object_models"
     json_file_path = os.path.join(base_path, f"{objects[object_id]}/grab_poses/grab_poses.json")
