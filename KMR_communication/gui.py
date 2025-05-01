@@ -344,7 +344,71 @@ def create_gui(camera_handler): # Pass camera_handler if needed by GUI actions
 
     ttk.Button(zone_frame, text="Check Zone", command=check_zone).grid(row=0, column=8, padx=5)
 
-
+    
+    # --- Advanced Sequence Configuration Page ---
+    advanced_seq_frame = ttk.Frame(notebook, padding="10")
+    notebook.add(advanced_seq_frame, text="Advanced Sequence")
+    
+    # Create a frame for all the parameters
+    params_frame = ttk.LabelFrame(advanced_seq_frame, text="Execute Sequence Parameters", padding="10")
+    params_frame.pack(fill="x", pady=10)
+    
+    # Checkbox parameters
+    only_current_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(params_frame, text="Only Current Location", variable=only_current_var).grid(row=0, column=0, sticky="w", padx=5, pady=2)
+    
+    do_camera_around_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(params_frame, text="Do Camera Around", variable=do_camera_around_var).grid(row=0, column=1, sticky="w", padx=5, pady=2)
+    
+    take_images_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(params_frame, text="Take Images", variable=take_images_var).grid(row=1, column=0, sticky="w", padx=5, pady=2)
+    
+    do_detection_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(params_frame, text="Do Detection", variable=do_detection_var).grid(row=1, column=1, sticky="w", padx=5, pady=2)
+    
+    do_6d_estimation_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(params_frame, text="Do 6D Estimation", variable=do_6d_estimation_var).grid(row=2, column=0, sticky="w", padx=5, pady=2)
+    
+    go_to_object_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(params_frame, text="Go To Object", variable=go_to_object_var).grid(row=2, column=1, sticky="w", padx=5, pady=2)
+    
+    clean_folder_var = tk.BooleanVar(value=True)
+    ttk.Checkbutton(params_frame, text="Clean Folder", variable=clean_folder_var).grid(row=3, column=0, sticky="w", padx=5, pady=2)
+    
+    # Text entry parameters
+    entry_frame = ttk.Frame(params_frame)
+    entry_frame.grid(row=4, column=0, columnspan=2, pady=10, sticky="w")
+    
+    ttk.Label(entry_frame, text="Detection Item:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+    detection_item_entry = ttk.Entry(entry_frame, width=20)
+    detection_item_entry.grid(row=0, column=1, padx=5, pady=2)
+    detection_item_entry.insert(0, "bottle")  # Default value
+    
+    ttk.Label(entry_frame, text="Output Folder:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
+    output_folder_entry = ttk.Entry(entry_frame, width=40)
+    output_folder_entry.grid(row=1, column=1, padx=5, pady=2)
+    output_folder_entry.insert(0, config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)  # Default value
+    
+    # Execute button
+    def run_advanced_sequence():
+        try:
+            sequences.execute_sequence(
+                camera_handler,
+                Only_current=only_current_var.get(),
+                do_camera_around=do_camera_around_var.get(),
+                take_images=take_images_var.get(),
+                do_detection=do_detection_var.get(),
+                do_6d_estimation=do_6d_estimation_var.get(),
+                go_to_object=go_to_object_var.get(),
+                detection_item=detection_item_entry.get(),
+                clean_folder=clean_folder_var.get(),
+                output_folder=output_folder_entry.get()
+            )
+        except Exception as e:
+            print(f"Error executing advanced sequence: {e}")
+    
+    ttk.Button(advanced_seq_frame, text="Execute Sequence", 
+               command=run_advanced_sequence).pack(pady=15, fill="x")
     # Add Honk buttons if desired
     # ttk.Button(seq_frame, text="Honk On", command=api.honk_on).pack(pady=5)
     # ttk.Button(seq_frame, text="Honk Off", command=api.honk_off).pack(pady=5)

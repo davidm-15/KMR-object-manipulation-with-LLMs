@@ -56,7 +56,7 @@ def main():
         elif args.mode == 'viz':
             sequences.visualize_transformations()
         elif args.mode == 'scan':
-            sequences.find_object_6D_pose(camera_handler=cam_handler, detection_item="box of jello")
+            sequences.find_object_6D_pose(camera_handler=cam_handler, detection_item="tuna fish can")
         elif args.mode == 'calc':
             sequences.Object_to_world()
         elif args.mode == 'sequence':
