@@ -9,6 +9,7 @@ from handlers.grounding_dino_handler import GroundingDINOHandler
 from handlers.lisa_handler import LISAHandler
 from handlers.midas_handler import MiDaSHandler
 from handlers.yolo_handler import YOLOHandler
+from handlers.qwen_handler import QwenHandler
 from PIL import Image
 import subprocess
 import re
@@ -115,6 +116,26 @@ def create_app(model_name):
     """Create Flask app with given model."""
     app = Flask(__name__)
     model_handler = MODEL_CLASSES[model_name](device)
+    qwen = QwenHandler(model_name="Qwen/Qwen2.5-VL-7B-Instruct")
+
+    @app.route("/text_inference", methods=["POST"])
+    def text_inference_route():
+        """Text inference request via Flask."""
+        if "text_input" not in request.form:
+            return jsonify({"error": "Missing text input"}), 400
+        text_input = request.form["text_input"]
+        max_new_tokens = int(request.form.get("max_new_tokens", 128))
+        return jsonify(qwen.text_inference(text_input, max_new_tokens))
+    
+    @app.route("/image_inference", methods=["POST"])
+    def image_inference_route():
+        """Image inference request via Flask."""
+        if "image" not in request.files or "prompt" not in request.form:
+            return jsonify({"error": "Missing image or prompt"}), 400
+        image_file = request.files["image"]
+        prompt = request.form["prompt"]
+        return jsonify(model_handler.infer(image_file, prompt))
+    
 
     @app.route("/process", methods=["POST"])
     def process_image_route():
