@@ -46,6 +46,43 @@ def send_for_pose_estimation(image_data, bounding_boxes, object_name):
     except Exception as e:
         print(f"Failed to connect to pose estimation server: {e}")
         return None
+    
+
+def send_text_inference(text_input, max_new_tokens=128):
+    """ Sends text to server for inference """
+    try:
+        response = requests.post(
+            "http://localhost:5000/text_inference",
+            data={
+                "text_input": text_input,
+                "max_new_tokens": str(max_new_tokens)
+            }
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Text Inference Error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Failed to connect to text inference server: {e}")
+        return None
+
+def send_image_inference(image_data, prompt):
+    """ Sends image to server for inference with prompt """
+    try:
+        response = requests.post(
+            "http://localhost:5000/image_inference",
+            files={"image": ("image.jpg", image_data, "image/jpeg")},
+            data={"prompt": prompt}
+        )
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Image Inference Error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Failed to connect to image inference server: {e}")
+        return None
 
 def process_images():
     """ Loads images, detects objects, and estimates 6D pose """
@@ -83,5 +120,23 @@ def process_images():
         cv2.imwrite(output_path, image)
         print(f"Processed image saved: {output_path}")
 
+
+
 if __name__ == "__main__":
-    process_images()
+    # process_images()
+
+    input_1 = "User has given an input prompt:"
+
+    user_input = "Segment the red box of cheezit"
+    user_input = "thing you put into outlet"
+
+
+    input_2 = "I need you to select the object to which is the prompt refers to:"
+    objects = "'box of jello', 'cracker box', 'foam brick', 'gray box', 'lego brick', 'mustard bottle', 'plug-in outlet expander', 'tuna fish can'"
+    input_3 = "Please select the object from the list above and give me the name of the object in a single line without any other text, if the object is not in the list please say 'not found'"
+
+    input = f"{input_1} '{user_input}'. {input_2} {objects} {input_3}"
+    print(input)
+
+    output = send_text_inference(input, max_new_tokens=128)
+    print(output["response"])

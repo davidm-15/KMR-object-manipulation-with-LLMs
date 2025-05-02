@@ -12,6 +12,7 @@ from . import sequences
 from . import gui
 
 # run me with python -m KMR_communication.main --mode sequence --item "mustard bottle" --clean
+# python -m KMR_communication.main --mode grabTest --item "box of jello" --clean
 # python -m KMR_communication.main --mode gui
 # plug-in outlet expander
 def main():
@@ -20,7 +21,7 @@ def main():
 
     # Argument Parser (optional, to choose between GUI and sequences)
     parser = argparse.ArgumentParser(description="KUKA KMR IIWA Control Interface")
-    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object", "scan", "estimate", "calc", "viz"],
+    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object", "scan", "estimate", "calc", "viz", "grabTest"],
                         help="Operation mode: 'gui', 'sequence', 'calibrate', 'pick'")
     parser.add_argument('--item', type=str, default='plug-in outlet expander', #'foam brick', #'mustard bottle',
                         help="Item name for detection/pose estimation in sequence mode")
@@ -51,6 +52,8 @@ def main():
             print("Starting GUI mode...")
             gui.create_gui(cam_handler)
             # api.IsPositionInZone(13.666, 14.643, 179.0876, 4)
+        elif args.mode == 'grabTest':
+            sequences.test_grabbing(detection_item=args.item, camera_handler=cam_handler, clean_folder=args.clean)
         elif args.mode == 'estimate':
             sequences.estimate_the_transformation()
         elif args.mode == 'viz':

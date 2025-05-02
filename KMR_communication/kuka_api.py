@@ -15,7 +15,7 @@ def call_endpoint(endpoint: str, params: dict = None, method: str = "GET", **kwa
     Returns:
         requests.Response | None: The response object or None if an error occurred.
     """
-    timeout = kwargs.get('timeout', 10)  # Default timeout for requests
+    timeout = kwargs.get('timeout', 15)  # Default timeout for requests
 
     url = f"{config.BASE_URL}/{endpoint}"
     response = None

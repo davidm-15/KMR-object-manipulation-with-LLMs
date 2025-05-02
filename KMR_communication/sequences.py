@@ -220,15 +220,6 @@ def estimate_the_transformation():
 
 
 
-
-
-
-
-
-
-
-
-
 def find_object_6D_pose(camera_handler: CameraHandler, **kwargs):
     output_folder = kwargs.get("output_folder", config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)
     do_detection = kwargs.get("do_detection", True)
@@ -636,6 +627,179 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     return T_world_obj_list
 
+
+
+
+def test_grabbing(**kwargs):
+    output_folder = kwargs.get("output_folder", config.DEFAULT_GO_AROUND_OUTPUT_FOLDER)
+    detection_item = kwargs.get("detection_item", "mustard bottle")
+    clean_folder = kwargs.get("clean_folder", False)
+    json_filename = kwargs.get("json_filename", "image_processing\\grabbing_poses\\looking_at_table.json")
+
+    T_world_obj_list = None
+    if clean_folder:
+        utils.clean_directory(output_folder)
+    
+    os.makedirs(output_folder, exist_ok=True)
+    
+    # Load joint positions from file
+    print(f"Loading joint positions from {json_filename}...")
+    with open(json_filename, "r") as f:
+        joint_data = json.load(f)
+    
+    if not joint_data or len(joint_data) == 0:
+        print(f"Error: No joint positions found in {json_filename}")
+        return None
+    
+    # Get the first joint position from the file
+    joints = joint_data[0]["joints"]
+    print(f"Moving to joint position: {joints}")
+    
+    # Go to the specified joint position
+    response = api.goto_joint(
+        joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+        joints["A5"], joints["A6"], joints["A7"]
+    )
+    
+    if not (response and response.ok and response.text.strip() == "OK"):
+        print(f"Failed to move to joint position: {response.text if response else 'No response'}")
+        return None
+    
+    print("Successfully moved to position. Waiting to stabilize...")
+    time.sleep(3)  # Wait for robot to stabilize
+    
+    # Initialize camera if not passed
+    camera_handler_local = None
+    if 'camera_handler' in kwargs:
+        camera_handler = kwargs['camera_handler']
+    else:
+        camera_handler_local = CameraHandler()
+        camera_handler = camera_handler_local
+    
+    # Take image
+    print("Capturing image...")
+    image = camera_handler.capture_image()
+    if image is None:
+        print("Failed to capture image")
+        return None
+    
+    # Save the original image
+    timestamp = int(time.time())
+    image_filename = f"{detection_item}_{timestamp}.png"
+    image_path = os.path.join(output_folder, image_filename)
+    camera_handler.save_image(image, image_path)
+    print(f"Saved image to {image_path}")
+    
+    # Send for detection
+    print(f"Sending image for detection of '{detection_item}'...")
+    image_bytes = utils.ndarray_to_bytes(image)
+    if not image_bytes:
+        print("Failed to convert image to bytes")
+        return None
+    
+    bounding_boxes = send_image_to_server(image_bytes, detection_item)
+    if not bounding_boxes:
+        print("Object not detected.")
+        return None
+    
+    print("\nOBJECT DETECTED!")
+    print("Bounding boxes:", bounding_boxes)
+    
+    # Draw boxes on image
+    img_detected = image.copy()
+    for (x1, y1, x2, y2) in bounding_boxes:
+        cv2.rectangle(img_detected, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+    detected_image_path = os.path.join(output_folder, f"{detection_item}_{timestamp}_detected.png")
+    cv2.imwrite(detected_image_path, img_detected)
+    print(f"Saved detected image to {detected_image_path}")
+    
+    # Send for 6D pose estimation
+    print("Sending for 6D pose estimation...")
+    pose_result_dict = send_for_pose_estimation(image_bytes, bounding_boxes, detection_item)
+    
+    # Check for errors
+    if pose_result_dict is None or "error" in pose_result_dict:
+        error_msg = pose_result_dict.get("error", "Unknown error") if pose_result_dict else "Returned None"
+        print(f"6D Pose estimation failed: {error_msg}")
+        return None
+    
+    if not pose_result_dict.get("pose"):
+        print(f"6D Pose estimation ran successfully but found no poses for '{detection_item}'.")
+        return None
+    
+    # Extract pose matrix
+    T_cam_obj_list = pose_result_dict["pose"]
+    T_cam_obj = np.array(T_cam_obj_list)
+    T_cam_obj[:3, 3] *= 1000  # Convert to mm if needed
+    
+    print(f"Estimated T_cam_obj:\n{T_cam_obj}")
+    
+    # Calculate object in world coordinates
+    kmr_pose = api.get_pose()
+    iiwa_pos = api.get_iiwa_position()
+    T_world_cam = utils.calculate_camera_in_world(kmr_pose, iiwa_pos)
+    
+    if T_world_cam is None:
+        print("Cannot calculate object in world: T_world_cam is None.")
+        return None
+    
+    T_world_obj = utils.calculate_object_in_world(T_world_cam, T_cam_obj)
+    print(f"Calculated T_world_obj:\n{T_world_obj}")
+    
+    # Save object pose to file
+    pose_data = {
+        "timestamp": timestamp,
+        "detection_item": detection_item,
+        "T_world_obj": T_world_obj.tolist() if T_world_obj is not None else None
+    }
+    pose_file = os.path.join(output_folder, f"{detection_item}_world_pose.json")
+    utils.save_json_data(pose_file, pose_data)
+    print(f"Saved world pose to {pose_file}")
+    
+    # Get the before grasp joint position from the calibration file
+    print("Moving to before-gripping position from calibration file...")
+    before_grip_file = "image_processing\\calibration_data\\before_gripping_pose.json"
+        
+
+    # Load the joint positions from the file
+    with open(before_grip_file, "r") as f:
+        joint_data = json.load(f)
+        
+    if not joint_data or len(joint_data) == 0:
+        print(f"Error: No joint positions found in {before_grip_file}")
+    else:
+        # Get the first joint position
+        joints = joint_data[0]["joints"]
+        print(f"Moving to before-grip position: {joints}")
+        
+        # Move to the specified joint position
+        response = api.goto_joint(
+            joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+            joints["A5"], joints["A6"], joints["A7"]
+        )
+        
+        if response and response.ok and response.text.strip() == "OK":
+            print("Successfully moved to before-grip position")
+            time.sleep(2)  # Allow time for the robot to settle
+        else:
+            print(f"Failed to move to before-grip position: {response.text if response else 'No response'}")
+
+    # Move to before grasp position and grab object
+    if T_world_obj is not None:
+        print("Moving to pre-grasp position and initiating object grab...")
+        T_world_obj_list = T_world_obj.tolist()
+        just_grab_the_object(T_world_obj, prompt=detection_item)
+        place_object()
+        winsound.Beep(660, 500)  # Signal completion
+    
+    # Clean up camera if we created it
+    if camera_handler_local:
+        camera_handler_local.close()
+    
+    return T_world_obj_list
+
+
+
 def just_grab_the_object(T_world_obj, **kwargs):
     use_before_grasp = kwargs.get("use_before_grasp", False)
     prompt = kwargs.get("prompt", "mustard bottle")
@@ -807,47 +971,102 @@ def just_grab_the_object(T_world_obj, **kwargs):
     # --- Command the Robot ---
     print("\n--- Commanding Robot ---")
     response = api.goto_position(position_before_grasp[0], position_before_grasp[1], position_before_grasp[2],
-                      orientation_before_grasp[0], orientation_before_grasp[1], orientation_before_grasp[2])
+                      orientation_before_grasp[0], orientation_before_grasp[1], orientation_before_grasp[2], speed=0.1)
+
+
+    time.sleep(5) # Use a non-blocking sleep if possible in a real application
 
     print("-"*50)
     print(f"Response from IIWA API: {response.text}")
     print("-"*50)
 
-    # if response.text == "failed":
-    #     iiwa_joints = api.get_iiwa_joint_position()
-    #     joints = np.array([iiwa_joints["A1"], iiwa_joints["A2"], iiwa_joints["A3"], iiwa_joints["A4"], iiwa_joints["A5"], iiwa_joints["A6"], iiwa_joints["A7"]])
-    #     print("IIWA solver failed to find a solution. Trying myself...")
-
-    #     print(f"Current IIWA Joints: {joints}")
-    #     print(f"T_iiwabase_ee_before_grasp:\n{T_iiwabase_ee_before_grasp}")
-    #     theta_final, success, final_error, clamped_warning = iiwa_robot.inverse_kinematics_nr(T_iiwabase_ee_before_grasp, joints)
-
-
-    #     print(f"Inverse Kinematics successful: {theta_final}")
-    #     response = api.goto_joint(
-    #         theta_final[0], theta_final[1], theta_final[2],
-    #         theta_final[3], theta_final[4], theta_final[5], theta_final[6]
-    #     )
-
-
-
-    #     return
 
     print("Waiting after moving to pre-grasp...")
-    time.sleep(10) # Use a non-blocking sleep if possible in a real application
-
+    
     api.goto_position(position_grasp[0], position_grasp[1], position_grasp[2],
-                      orientation_grasp[0], orientation_grasp[1], orientation_grasp[2])
+                      orientation_grasp[0], orientation_grasp[1], orientation_grasp[2], speed=0.1)
     
 
-    time.sleep(10) # Wait for the robot to reach the grasp position
+    time.sleep(5) # Wait for the robot to reach the grasp position
 
     print("Grasping...")
     api.close_gripper(force=5)
 
     time.sleep(5) # Wait for the grasp to complete
 
-    api.go_home()
+    place_object()
+    
+
+def place_object():
+    """Places the object by moving to a predefined position from placing_pose.json."""
+    print("Starting object placement procedure...")
+    
+    # Load the placing pose from JSON file
+    placing_pose_file = "image_processing\\grabbing_poses\\placing_pose.json"
+    with open(placing_pose_file, "r") as f:
+        placing_data = json.load(f)
+        
+    if not placing_data or not isinstance(placing_data, list) or len(placing_data) == 0:
+        print(f"Error: No valid data found in {placing_pose_file}")
+        return False
+        
+    # Get the first pose from the file
+    pose_data = placing_data[0]
+    
+    # Verify that joints data exists
+    if "joints" not in pose_data:
+        print(f"Error: Joints data not found in placing pose")
+        return False
+        
+    joints = pose_data["joints"]
+    
+    # Check if all required joint keys exist
+    required_keys = [f"A{i}" for i in range(1, 8)]
+    if not all(key in joints for key in required_keys):
+        print(f"Error: Missing joint keys in placing pose")
+        return False
+        
+    print(f"Moving to placing position: {joints}")
+    
+    # Command robot to move to joint positions
+    response = api.goto_joint(
+        joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+        joints["A5"], joints["A6"], joints["A7"]
+    )
+    
+    if response and response.ok and response.text.strip() == "OK":
+        print("Successfully moved to placing position")
+        time.sleep(3)  # Wait for the robot to reach the position
+        
+        # Open the gripper to release the object
+        print("Releasing object...")
+        api.release_object()
+        time.sleep(1)
+        api.open_gripper()
+        time.sleep(1)  # Wait for the gripper to open
+        
+        # Optionally move back to a safe position
+        print("Moving away from placed object...")
+        
+        # Get current joints
+        current_joints = api.get_iiwa_joint_position()
+        if current_joints:
+            # Move up slightly (increase A3 joint)
+            response = api.goto_joint(
+                current_joints["A1"], 
+                current_joints["A2"], 
+                current_joints["A3"],  # Move up slightly
+                current_joints["A4"],
+                current_joints["A5"], 
+                current_joints["A6"], 
+                current_joints["A7"]
+            )
+        
+        return True
+    else:
+        print(f"Failed to move to placing position: {response.text if response else 'No response'}")
+        return False
+        
 
 
 
@@ -887,7 +1106,7 @@ def drive_to_object(T_world_obj):
     # Calculate the new KMR position that is 420mm away from the object
 
     minimal_iiwa_range = 420  # mm
-    offset_from_object = 350  # mm
+    offset_from_object = 174  # mm
 
     new_KMR_position = Object_position + direction_vector * (minimal_iiwa_range + offset_from_object + config.LONGEST_LENGTH_KMR/2)
 
