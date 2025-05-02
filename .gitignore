@@ -38,7 +38,9 @@ KMRcode/*
 !object_models/*/grab_poses/
 !object_models/*/mesh/
 
-
+!utils/
+utils/*
+!utils/*.py
 
 !APIs/
 APIs/*
