@@ -19,7 +19,7 @@ class YOLOHandler:
     """
     def __init__(self, device):
         self.device = device
-        self.weights_path = 'YOLO/outputs/experiment_12/weights/best.pt'
+        self.weights_path = 'YOLO/outputs/experiment_13/weights/best.pt'
 
         self.model = YOLO(self.weights_path)
         logging.info(f"Loaded YOLO model from: {self.weights_path} onto device: {self.device}")

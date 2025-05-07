@@ -18,6 +18,8 @@ from datetime import datetime
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 # python -m groma.eval.run_groma     --model-name FoundationVision/groma-7b-finetune     --image-file ../KMR-object-manipulation-with-LLMs/images/ScannedObjects/ScannedObjects/Stationary/ScanObjects_5/image_1743174825.png     --query "mustard bottle"
 
@@ -128,3 +130,17 @@ class MegaPoseHandler:
             # return {"visualization": vis, "poses": object_data}
 
         return {"poses": object_data}
+    
+
+
+if __name__ == "__main__":
+    megapose_path = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/object_models"
+    megapose_handler = MegaPoseHandler(device, megapose_path)
+
+
+    image = Image.open("/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects/cracker box/image_rgb.png")
+    object_name="cracker box"
+    bbox=[894, 1406, 1078, 1655]
+    DoVis=True
+
+    megapose_handler.estimate_pose(image, object_name, bbox)
