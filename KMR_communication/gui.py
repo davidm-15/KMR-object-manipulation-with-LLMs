@@ -3,7 +3,7 @@ import tkinter.ttk as ttk
 import numpy as np
 
 # --- Use Relative Imports ---
-from . import config
+from utils import config
 from . import kuka_api as api
 import json
 import os

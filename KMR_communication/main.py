@@ -4,14 +4,17 @@ import time
 import argparse
 
 # Import modules
-from . import config
+from utils import config
 from . import kuka_api as api
-from . import utils
+from utils import utils
 from .camera_handler import CameraHandler
 from . import sequences
 from . import gui
 
-# run me with python -m KMR_communication.main --mode sequence --item "mustard bottle" --clean
+# run me with python -m KMR_communication.main --mode sequence --prompt "Find me a brown foam brick" --clean
+
+
+
 # python -m KMR_communication.main --mode grabTest --item "box of jello" --clean
 # python -m KMR_communication.main --mode gui
 # plug-in outlet expander
@@ -25,6 +28,7 @@ def main():
                         help="Operation mode: 'gui', 'sequence', 'calibrate', 'pick'")
     parser.add_argument('--item', type=str, default='plug-in outlet expander', #'foam brick', #'mustard bottle',
                         help="Item name for detection/pose estimation in sequence mode")
+    parser.add_argument('--prompt', type=str, default='find me a plug-in outlet expander')
     parser.add_argument('--clean', action='store_true',
                         help="Clean output folder before running sequence/calibration")
     args = parser.parse_args()
@@ -63,17 +67,17 @@ def main():
         elif args.mode == 'calc':
             sequences.Object_to_world()
         elif args.mode == 'sequence':
-            print(f"Starting Execution Sequence mode for item: '{args.item}'")
+            print(f"Starting Execution Sequence mode for prompt: '{args.prompt}'")
             # Define sequence parameters
             sequences.execute_sequence(
                 cam_handler,
-                Only_current=True,
+                Only_current=False,
                 do_camera_around=True,
                 take_images=True,
                 do_detection=True,
                 do_6d_estimation=True,
-                go_to_object=False,
-                detection_item=args.item,
+                go_to_object=True,
+                prompt=args.prompt,
                 clean_folder=args.clean,
                 output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
             )

@@ -41,9 +41,11 @@ import com.kuka.parameters.IParameterMap;
 import com.kuka.common.honk.v1alpha1.HonkCommand;
 import com.kuka.motion.IMotionContainer;
 import com.kuka.nav.Location;
+import com.kuka.nav.MapZone;
 import com.kuka.nav.OrientationMode;
 import com.kuka.nav.Pose;
 import com.kuka.nav.data.LocationData;
+import com.kuka.nav.data.MapZoneData;
 import com.kuka.nav.honk.HonkAction;
 import com.kuka.nav.line.VirtualLine;
 import com.kuka.nav.line.VirtualLineMotion;
@@ -90,7 +92,10 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 		private double A5 = 0;
 		private double A6 = 0;
 		private double A7 = 0;
-		private double speed = 0.1;
+		private double speed = 0.1;	
+		
+		@Inject
+		private MapZoneData mapZoneData;
 		
 		long initSpeed = 200000L;
 		long initForce = 1L;
@@ -134,6 +139,7 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 	            server.createContext("/ReleaseObject", new ReleaseObject());
 	            server.createContext("/GetGripperState", new GetGripperState());
 	            server.createContext("/SetLED", new SetLED());
+	            server.createContext("/IsPositionInZone", new IsPositionInZone());
 
 	            
 	            
@@ -153,6 +159,38 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 	    
 	    // ------------------------
 	    
+	    
+	    class IsPositionInZone implements HttpHandler {
+	    	@Override
+			public void handle(HttpExchange t) throws IOException {
+		
+				String response = "None";
+				
+				Map <String,String>parms = queryToMap(t.getRequestURI().getQuery());
+				int id = Integer.parseInt(parms.get("id")); 
+                double x = Double.parseDouble(parms.get("x"));
+                double y = Double.parseDouble(parms.get("y"));
+                double orientation = Double.parseDouble(parms.get("orientation"));
+
+                Pose Position = new Pose(x, y, orientation);
+				
+                try{
+					MapZone zone = mapZoneData.get(id);
+					boolean IsIn = zone.isInside(Position);
+					response = "" + IsIn;
+                }catch(Exception e){
+					System.out.println("Exception is: "+e);
+					response = "" + e;
+                }
+			
+		        t.sendResponseHeaders(200, response.length());
+	            OutputStream os = t.getResponseBody();
+	            os.write(response.getBytes());
+	            os.close();
+			}
+	    	
+	    }
+	    
 	    class SetLED implements HttpHandler {
 
 			@Override
@@ -163,12 +201,14 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 				Map <String,String>parms = queryToMap(t.getRequestURI().getQuery());
 				String color = parms.get("color");
 				
+				System.out.println(color);
+				
 				try{
-					if(color == "blue"){
+					if("blue".equals(color)){
 						flange.blueLED();
-					}else if(color == "red"){
+					}else if("red".equals(color)){
 						flange.redLED();
-					}else if(color == "green"){
+					}else if("green".equals(color)){
 						flange.greenLED();
 					}else{
 						response = "unknown color";
@@ -339,7 +379,7 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 				
 				
 				if (operation=="" || operation=="failed") {
-					operation = "GotoCartesianposition";
+					// operation = "GotoCartesianposition";
 					TX = Double.parseDouble(parms.get("x"));
 					TY = Double.parseDouble(parms.get("y"));
 					TZ = Double.parseDouble(parms.get("z"));
@@ -348,11 +388,18 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 					TC = Double.parseDouble(parms.get("c"));
 					speed = Double.parseDouble(parms.get("Speed"));
 					motion = parms.get("Motion").toString().trim();
-
+					System.out.println("motion: " + motion);
 					response = "OK";
 				}
 				else{
 					response = "busy";		
+				}
+				
+				GotoCartesian(TX, TY, TZ, TA, TB, TC, speed, motion);
+				
+				if(fail == "failed"){
+					response = "failed";
+					fail = "";
 				}
 				
 		        t.sendResponseHeaders(200, response.length());
@@ -375,7 +422,7 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 				Map <String,String>parms = queryToMap(t.getRequestURI().getQuery());
 				
 				if (operation=="" || operation=="failed") {
-					operation = "GotoJointposition";
+					// operation = "GotoJointposition";
 					A1 = Double.parseDouble(parms.get("A1"));
 					A2 = Double.parseDouble(parms.get("A2"));
 					A3 = Double.parseDouble(parms.get("A3"));
@@ -390,7 +437,15 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 					response = "OK";
 				}
 				else
-					response = "busy";			
+					response = "busy";	
+				
+				
+				GotoJoint(A1, A2, A3, A4, A5, A6, A7);
+				
+				if(fail == "failed"){
+					response = "failed";
+					fail = "";
+				}
 				
 				
 				t.sendResponseHeaders(200, response.length());
@@ -653,11 +708,11 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 	            VirtualLine v1 = VirtualLine.from(currentLocation).to(targetPosition);
 	            System.out.println("Q7");
 	            
-	            VirtualLineMotion motion = new VirtualLineMotion(kmp.getPose(), targetLocation.getPose());
-	            motion.setOrientationMode(OrientationMode.VARIABLE);
+	            VirtualLineMotion virtual_motion = new VirtualLineMotion(kmp.getPose(), targetLocation.getPose());
+	            virtual_motion.setOrientationMode(OrientationMode.VARIABLE);
 	            
 	            System.out.println("Q2");
-	            	/*
+	            /*
 	            VirtualLine Line = null;
 	            
 	            Line.setGoal(targetLocation.getPose().toPosition());
@@ -673,7 +728,7 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 	            //Execute and block until finish
 	            try{
 	            	kmp.lock();
-	            	kmp.execute(motion);
+	            	kmp.execute(virtual_motion);
 	            }catch (Exception e){
 	            	
 	            	getLogger().error("Error during motion: ", e);
@@ -718,6 +773,7 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 	                	kmp.execute(new RelativeMotion(x, y, Theta));
 	                }catch(Exception e){
 	                	getLogger().info("KMR unlocked.");
+	                	getLogger().info("" + e);
 	                }finally{
 	        			kmp.unlock();
 	        			getLogger().info("KMR unlocked.");
@@ -779,9 +835,9 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 	    public void run() {
 	        System.out.println("Robot Server is running...");
 	        
-	        gripper.initializeGripper();
-			gripper.setSpeed(initSpeed);
-			gripper.setForce(initForce);
+	        // gripper.initializeGripper();
+			// gripper.setSpeed(initSpeed);
+			// gripper.setForce(initForce);
 	        
 	       
 	        while (run) {
@@ -792,6 +848,7 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 				else if (operation == "GotoJointposition")
 					GotoJoint(A1, A2, A3, A4, A5, A6, A7);
 	            // Keep the application running
+	        	
 	        }
 	    }
 	    
@@ -826,7 +883,7 @@ public class _ServerCommunication extends RoboticsAPIApplication{
 			System.out.println(distanceFrame(calculatedFrame));
 
 			try{
-				if ( motion == "ptp" )
+				if ( motion.equals("ptp"))
 				{
 					System.out.println("ptp motion");
 					robot.move(ptp(calculatedFrame).setJointVelocityRel(speed));

@@ -7,12 +7,11 @@ import os
 import winsound
 import open3d as o3d
 
-from . import config
+from utils import config
 from . import kuka_api as api
-from . import utils
+from utils import utils
 from .camera_handler import CameraHandler # If used directly
-from communication.client import send_image_to_server
-from communication.client import send_for_pose_estimation
+from communication.client import send_image_to_server, send_text_inference, send_for_pose_estimation, send_image_inference
 from scipy.spatial.transform import Rotation as R
 from robot import iiwa
 import utils.image_utils as image_utils
@@ -571,10 +570,20 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     do_detection = kwargs.get("do_detection", True) # Default to True
     do_6d_estimation = kwargs.get("do_6d_estimation", True) # Default to True
     go_to_object = kwargs.get("go_to_object", True) # Default to True
-    detection_item = kwargs.get("detection_item", "mustard bottle")
+    prompt = kwargs.get("prompt", "mustard bottle")
     clean_folder = kwargs.get("clean_folder", False) # Renamed from clean_fodler
     json_filename = kwargs.get("json_filename", "sequence_data.json") # Use a different default filename
 
+
+
+    detection_item = send_text_inference(utils.build_prompt(prompt))["response"]
+    # detection_item = prompt
+    
+    if detection_item == "not found":
+        print("Item not found in the database. Please check the prompt.")
+        return None
+    else:
+        print(f"Item for detection is: {detection_item}")
 
     if clean_folder:
         utils.clean_directory(output_folder)
@@ -622,8 +631,9 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     if go_to_object:    
         drive_to_object(T_world_obj)
 
-    just_grab_the_object(T_world_obj, prompt=detection_item)
+    just_grab_the_object(T_world_obj, prompt=detection_item, use_before_grasp=True)
 
+    place_object()
 
     return T_world_obj_list
 
@@ -804,7 +814,6 @@ def just_grab_the_object(T_world_obj, **kwargs):
     use_before_grasp = kwargs.get("use_before_grasp", False)
     prompt = kwargs.get("prompt", "mustard bottle")
 
-
     if use_before_grasp:
         # Function to move to the pre-grasp position from the calibration file
         file_path = "image_processing\\calibration_data\\before_gripping_pose.json"
@@ -853,6 +862,8 @@ def just_grab_the_object(T_world_obj, **kwargs):
     # Calculate all possible grasp positions in the world frame and their distances
     grasp_options = []
     
+    kmr_pose_m_rad = api.get_pose()
+    T_world_iiwabase = utils.get_T_world_iiwabase(kmr_pose_m_rad)
     for i, grasp in enumerate(grasp_data):
         # Calculate pre-grasp position in world frame
         T_object_ee_before_grasp = np.array(grasp["T_object_ee_before_grasp"])
@@ -865,8 +876,7 @@ def just_grab_the_object(T_world_obj, **kwargs):
         
         # Calculate distance to current end effector position
         # Convert world position to iiwa base frame for comparison
-        kmr_pose_m_rad = api.get_pose()
-        T_world_iiwabase = utils.get_T_world_iiwabase(kmr_pose_m_rad)
+        
         T_inv_world_iiwabase = utils.inverse_homogeneous_transform(T_world_iiwabase)
         T_iiwabase_ee = T_inv_world_iiwabase @ T_world_ee_before_grasp
         iiwa_ee_pos = T_iiwabase_ee[:3, 3]
@@ -974,7 +984,7 @@ def just_grab_the_object(T_world_obj, **kwargs):
                       orientation_before_grasp[0], orientation_before_grasp[1], orientation_before_grasp[2], speed=0.1)
 
 
-    time.sleep(5) # Use a non-blocking sleep if possible in a real application
+    time.sleep(2.5) # Use a non-blocking sleep if possible in a real application
 
     print("-"*50)
     print(f"Response from IIWA API: {response.text}")
@@ -987,12 +997,19 @@ def just_grab_the_object(T_world_obj, **kwargs):
                       orientation_grasp[0], orientation_grasp[1], orientation_grasp[2], speed=0.1)
     
 
-    time.sleep(5) # Wait for the robot to reach the grasp position
+    time.sleep(2.5) # Wait for the robot to reach the grasp position
+
+    
 
     print("Grasping...")
     api.close_gripper(force=5)
 
-    time.sleep(5) # Wait for the grasp to complete
+    time.sleep(2.5) # Wait for the grasp to complete
+
+    api.goto_position(position_before_grasp[0], position_before_grasp[1], position_before_grasp[2],
+                      orientation_before_grasp[0], orientation_before_grasp[1], orientation_before_grasp[2], speed=0.1)
+
+    time.sleep(2.5)
 
     place_object()
     
@@ -1012,12 +1029,7 @@ def place_object():
         
     # Get the first pose from the file
     pose_data = placing_data[0]
-    
-    # Verify that joints data exists
-    if "joints" not in pose_data:
-        print(f"Error: Joints data not found in placing pose")
-        return False
-        
+            
     joints = pose_data["joints"]
     
     # Check if all required joint keys exist
@@ -1106,7 +1118,7 @@ def drive_to_object(T_world_obj):
     # Calculate the new KMR position that is 420mm away from the object
 
     minimal_iiwa_range = 420  # mm
-    offset_from_object = 174  # mm
+    offset_from_object = 174 - 200  # mm
 
     new_KMR_position = Object_position + direction_vector * (minimal_iiwa_range + offset_from_object + config.LONGEST_LENGTH_KMR/2)
 
@@ -1589,7 +1601,7 @@ def visualize_transformations():
                7: "plug-in outlet expander",
                8: "tuna fish can"}
     
-    object_id = 8
+    object_id = 5
 
     base_path = "object_models"
     json_file_path = os.path.join(base_path, f"{objects[object_id]}/grab_poses/grab_poses.json")
