@@ -134,7 +134,7 @@ def create_app(model_name):
             return jsonify({"error": "Missing image or prompt"}), 400
         image_file = request.files["image"]
         prompt = request.form["prompt"]
-        return jsonify(model_handler.infer(image_file, prompt))
+        return jsonify(qwen.image_text_inference(image_file, prompt))
     
 
     @app.route("/process", methods=["POST"])

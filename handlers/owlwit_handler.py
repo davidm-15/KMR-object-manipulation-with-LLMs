@@ -22,6 +22,7 @@ class OwlViTHandler:
         with torch.no_grad():
             outputs = self.model(**inputs)
 
+
         # Target image sizes (height, width) to rescale box predictions
         target_sizes = torch.Tensor([image.size[::-1]]).to(self.device)
         results = self.processor.post_process_object_detection(
@@ -35,8 +36,10 @@ class OwlViTHandler:
         
         # Convert to list of integer coordinates
         bounding_boxes = [[int(box[0]), int(box[1]), int(box[2]), int(box[3])] for box in boxes]
+        scores = [[float(score)] for score in scores]
+    
         
-        return {"bounding_boxes": bounding_boxes}
+        return {"bounding_boxes": bounding_boxes, "scores": scores}
 
 
 if __name__ == '__main__':
