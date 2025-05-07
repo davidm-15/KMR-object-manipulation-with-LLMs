@@ -2,6 +2,8 @@ import requests
 import os
 import cv2
 import numpy as np
+import utils.utils as utils
+import time
 
 SERVER_URL_DETECTION = "http://localhost:5000/process"
 SERVER_URL_POSE = "http://localhost:5000/estimate_pose"
@@ -123,20 +125,7 @@ def process_images():
 
 
 if __name__ == "__main__":
-    # process_images()
+    start_time = time.time()
+    process_images()
+    print("--- %s seconds ---" % (time.time() - start_time))
 
-    input_1 = "User has given an input prompt:"
-
-    user_input = "Segment the red box of cheezit"
-    user_input = "thing you put into outlet"
-
-
-    input_2 = "I need you to select the object to which is the prompt refers to:"
-    objects = "'box of jello', 'cracker box', 'foam brick', 'gray box', 'lego brick', 'mustard bottle', 'plug-in outlet expander', 'tuna fish can'"
-    input_3 = "Please select the object from the list above and give me the name of the object in a single line without any other text, if the object is not in the list please say 'not found'"
-
-    input = f"{input_1} '{user_input}'. {input_2} {objects} {input_3}"
-    print(input)
-
-    output = send_text_inference(input, max_new_tokens=128)
-    print(output["response"])

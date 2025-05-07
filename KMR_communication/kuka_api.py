@@ -1,7 +1,7 @@
 # kuka_api.py
 import requests
 import numpy as np
-from . import config  # Import the configuration
+from utils import config  # Import the configuration
 
 def call_endpoint(endpoint: str, params: dict = None, method: str = "GET", **kwargs) -> requests.Response | None:
     """
@@ -15,7 +15,7 @@ def call_endpoint(endpoint: str, params: dict = None, method: str = "GET", **kwa
     Returns:
         requests.Response | None: The response object or None if an error occurred.
     """
-    timeout = kwargs.get('timeout', 15)  # Default timeout for requests
+    timeout = kwargs.get('timeout', 20)  # Default timeout for requests
 
     url = f"{config.BASE_URL}/{endpoint}"
     response = None
@@ -69,6 +69,7 @@ def go_home():
 def close_gripper(force: int = 1):
     """Closes the gripper."""
     params = {"force": force}
+    print(f"Closing gripper with force: {force}")
     call_endpoint("CloseGripper", params)
 
 def open_gripper():
