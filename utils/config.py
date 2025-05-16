@@ -32,6 +32,7 @@ IMAGES_DIR = os.path.join(_PROJECT_ROOT, "images")
 CAMERA_EXTRINSIC_FILE = os.path.join(IMAGE_PROCESSING_DIR, "calibration_data", "camera_extrinsic.json")
 HAND_POSES_FILE = os.path.join(COMMUNICATION_DIR, "HandPoses.json") # Adjust path if needed
 GO_AROUND_HAND_POSES_FILE = os.path.join(IMAGE_PROCESSING_DIR, "calibration_data", "GoAroundHandPoses.json") # Adjust path if needed
+FAR_GRAB_EXPERIMENT_HAND_POSES_FILE = os.path.join(IMAGE_PROCESSING_DIR, "calibration_data", "FarGrabExperiment.json") # Adjust path if needed
 
 # Output Directories (can be overridden)
 DEFAULT_GO_AROUND_OUTPUT_FOLDER = os.path.join(IMAGES_DIR, "GoAround")
