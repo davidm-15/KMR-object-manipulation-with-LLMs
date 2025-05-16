@@ -7,8 +7,7 @@ import cv2.aruco as aruco
 from image_processing.basler_camera import BaslerCamera
 from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
-from communication.KMR_communication import get_iiwa_base_in_world
-from communication.KMR_communication import GetCameraInWorld
+from utils import utils
 from utils.image_utils import get_rotation_matrix_x, get_rotation_matrix_y, get_rotation_matrix_z
 import argparse
 import json
@@ -122,6 +121,18 @@ def intrinsic_calibration(images_path: str, **kwargs: dict) -> dict:
         raise RuntimeError("No chessboard patterns detected. Check images or pattern size. Are the images in PNG format?")
 
     ret, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+
+    total_error = 0
+    for i in range(len(objpoints)):
+        imgpoints2, _ = cv2.projectPoints(objpoints[i], np.zeros((3,1)), np.zeros((3,1)), mtx, dist)
+        error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
+        total_error += error
+
+    # mean_error = total_error / len(objpoints)
+    # print(f"\nMean Reprojection Error: {mean_error:.4f}")
+    # camera_data["reprojection_error"] = mean_error
+
+
 
     if not ret:
         raise RuntimeError("Camera calibration failed. Ensure chessboard images are suitable.")
@@ -445,7 +456,7 @@ def visualize_box():
     center_y = BOX_CENTER_Y
     min_z = BOX_MIN_Z
 
-    iiwa_base = get_iiwa_base_in_world(np.array([center_x, center_y, 0]))
+    iiwa_base = utils.get_iiwa_base_in_world(np.array([center_x, center_y, 0]))
 
     # Calculate the offset for the center position
     offset_x = center_x - length / 2
@@ -510,7 +521,7 @@ def visualize_box():
 
 
 
-    transformation_matrix = np.vstack((np.hstack((np.eye(3), get_iiwa_base_in_world(np.array([center_x, center_y, 0])).reshape(3, 1))), np.zeros((1, 4))))
+    transformation_matrix = np.vstack((np.hstack((np.eye(3), utils.get_iiwa_base_in_world(np.array([center_x, center_y, 0])).reshape(3, 1))), np.zeros((1, 4))))
     transformation_matrix[3, 3] = 1
 
 
@@ -569,7 +580,7 @@ def camera_pose():
 def visualise_go_around():
     # Load the JSON file
 
-    json_file = "images/GoAround/data.json"
+    json_file = "image_processing\calibration_data\GoAroundHandPoses.json"
     # json_file = "communication/HandPoses.json"
     # json_file = "images/GoAround/new_camera_in_world.json"
     with open(json_file, "r") as f:
@@ -628,9 +639,7 @@ def Recalculate_world_position():
 
         # Extract position and orientation
 
-
-
-        camera_in_world = GetCameraInWorld(pose, position)
+        camera_in_world = utils.calculate_camera_in_world(pose, position)
         # Save the new camera_in_world
         new_data.append({
             "image": item["image"],

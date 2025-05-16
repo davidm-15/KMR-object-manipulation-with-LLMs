@@ -11,7 +11,11 @@ from .camera_handler import CameraHandler
 from . import sequences
 from . import gui
 
-# run me with python -m KMR_communication.main --mode sequence --prompt "Find me a brown foam brick" --clean
+# run me with python -m KMR_communication.main --mode sequence --prompt "Find me a brown yellow mustard bottle" --clean
+
+
+
+# run me with python -m KMR_communication.main --mode FarGrabExperiment --prompt "box of jello" --clean
 
 
 
@@ -24,8 +28,8 @@ def main():
 
     # Argument Parser (optional, to choose between GUI and sequences)
     parser = argparse.ArgumentParser(description="KUKA KMR IIWA Control Interface")
-    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object", "scan", "estimate", "calc", "viz", "grabTest"],
-                        help="Operation mode: 'gui', 'sequence', 'calibrate', 'pick'")
+    parser.add_argument('--mode', type=str, default='gui', choices=['gui', 'sequence', 'calibrate', 'pick', "object", "scan", "estimate", "calc", "viz", "grabTest", "FarGrabExperiment"],
+                        help="Operation mode: 'gui', 'sequence', 'calibrate', 'pick', 'FarGrabExperiment'")
     parser.add_argument('--item', type=str, default='plug-in outlet expander', #'foam brick', #'mustard bottle',
                         help="Item name for detection/pose estimation in sequence mode")
     parser.add_argument('--prompt', type=str, default='find me a plug-in outlet expander')
@@ -66,6 +70,21 @@ def main():
             sequences.find_object_6D_pose(camera_handler=cam_handler, detection_item="tuna fish can")
         elif args.mode == 'calc':
             sequences.Object_to_world()
+        elif args.mode == 'FarGrabExperiment':
+            sequences.execute_sequence(
+                cam_handler,
+                Only_current=False,
+                do_camera_around=True,
+                take_images=True,
+                do_detection=True,
+                do_6d_estimation=True,
+                go_to_object=True,
+                prompt=args.prompt,
+                clean_folder=args.clean,
+                output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER, # Or customize
+                go_to_poses = [13],
+                joint_pose_file = config.FAR_GRAB_EXPERIMENT_HAND_POSES_FILE
+            )
         elif args.mode == 'sequence':
             print(f"Starting Execution Sequence mode for prompt: '{args.prompt}'")
             # Define sequence parameters
@@ -79,7 +98,9 @@ def main():
                 go_to_object=True,
                 prompt=args.prompt,
                 clean_folder=args.clean,
-                output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER # Or customize
+                output_folder=config.DEFAULT_GO_AROUND_OUTPUT_FOLDER, # Or customize
+                go_to_poses = [7, 8],
+                joint_pose_file = config.GO_AROUND_HAND_POSES_FILE
             )
             # sequences.just_grab_the_object(np.array([
             #     [0.4548, 0.8138, 0.3618, 12658.4371],

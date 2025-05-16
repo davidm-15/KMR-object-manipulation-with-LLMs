@@ -444,13 +444,13 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
     do_detection = kwargs.get("do_detection", False)
     do_6d_estimation = kwargs.get("do_6d_estimation", False)
     detection_item = kwargs.get("detection_item", "foam brick")
-    pose_file = kwargs.get("pose_file", config.GO_AROUND_HAND_POSES_FILE)
+    joint_pose_file = kwargs.get("joint_pose_file", config.GO_AROUND_HAND_POSES_FILE)
     json_filename = kwargs.get("json_filename", "data.json")
     
 
-    poses_data = utils.load_json_data(pose_file)
+    poses_data = utils.load_json_data(joint_pose_file)
     if not poses_data or not isinstance(poses_data, list):
-        print(f"Error: Could not load or parse poses from {pose_file}")
+        print(f"Error: Could not load or parse poses from {joint_pose_file}")
         return
 
     # Extract joint configurations, ensure keys match API ('A1'...'A7')
@@ -469,10 +469,10 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
             joint_dict["speed"] = float(pose_entry.get("speed", config.DEFAULT_ARM_SPEED)) # Use default speed if not specified
             Poses.append(joint_dict)
         else:
-            print(f"Warning: Skipping invalid pose entry in {pose_file}: {pose_entry}")
+            print(f"Warning: Skipping invalid pose entry in {joint_pose_file}: {pose_entry}")
 
     if not Poses:
-        print(f"No valid joint poses found in {pose_file}")
+        print(f"No valid joint poses found in {joint_pose_file}")
         return
 
     os.makedirs(output_folder, exist_ok=True)
@@ -513,7 +513,7 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
     # --- END: Restore Direction Logic ---
 
 
-    print(f"Starting GoAround sequence using {len(Poses)} poses from {pose_file}")
+    print(f"Starting GoAround sequence using {len(Poses)} poses from {joint_pose_file}")
     # Loop through the (potentially reversed) Poses list
 
     T_world_obj_list = None 
@@ -573,7 +573,9 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
     prompt = kwargs.get("prompt", "mustard bottle")
     clean_folder = kwargs.get("clean_folder", False) # Renamed from clean_fodler
     json_filename = kwargs.get("json_filename", "sequence_data.json") # Use a different default filename
-
+    go_to_poses = kwargs.get("go_to_poses", [])
+    joint_pose_file = kwargs.get("joint_pose_file", config.GO_AROUND_HAND_POSES_FILE)
+    
 
 
     detection_item = send_text_inference(utils.build_prompt(prompt))["response"]
@@ -590,10 +592,8 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     os.makedirs(output_folder, exist_ok=True) # Ensure directory exists
 
-    locations = kwargs.get("locations", [7, 8]) # Use predefined locations 1 and 2
-
     T_world_obj_list = None
-    for i, location in enumerate(locations):
+    for i, location in enumerate(go_to_poses):
         print(f"\n--- Moving to Location {location} ---")
         if Only_current:
             response = type('Response', (), {'ok': True, 'text': 'OK'})()
@@ -616,7 +616,8 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
                     do_6d_estimation=do_6d_estimation,
                     detection_item=detection_item,
                     # Use a location-specific json filename or append to the main one
-                    json_filename=json_filename
+                    json_filename=json_filename,
+                    joint_pose_file = joint_pose_file
                 )
                 if T_world_obj_list is not None:
                     break
@@ -630,6 +631,48 @@ def execute_sequence(camera_handler: CameraHandler, **kwargs):
 
     if go_to_object:    
         drive_to_object(T_world_obj)
+
+
+    # Load joint positions from file
+    print("Loading joint positions from image_processing\\grabbing_poses\\looking_at_table.json...")
+    with open("image_processing\\grabbing_poses\\looking_at_table.json", "r") as f:
+        joint_data = json.load(f)
+
+    if not joint_data or len(joint_data) == 0:
+        print("Error: No joint positions found in image_processing\\grabbing_poses\\find_3D.json")
+    else:
+        # Get the first joint position from the file
+        joints = joint_data[0]["joints"]
+        print(f"Moving to joint position: {joints}")
+
+        # Go to the specified joint position
+        response = api.goto_joint(
+            joints["A1"], joints["A2"], joints["A3"], joints["A4"],
+            joints["A5"], joints["A6"], joints["A7"]
+        )
+
+        if not (response and response.ok and response.text.strip() == "OK"):
+            print(f"Failed to move to joint position: {response.text if response else 'No response'}")
+        else:
+            print("Successfully moved to position. Waiting to stabilize...")
+            time.sleep(3)  # Wait for robot to stabilize
+
+            # Capture image and estimate object position
+            print("Capturing image and estimating object position...")
+            T_world_obj_list = get_and_save_image_data(
+                camera_handler,
+                output_folder=output_folder,
+                do_detection=do_detection,
+                do_6d_estimation=do_6d_estimation,
+                detection_item=detection_item,
+                json_filename=json_filename
+            )
+            if T_world_obj_list is not None:
+                print(f"Estimated object position in world coordinates:\n{T_world_obj_list}")
+            else:
+                print("Failed to estimate object position.")
+
+    T_world_obj = np.array(T_world_obj_list)
 
     just_grab_the_object(T_world_obj, prompt=detection_item, use_before_grasp=True)
 
@@ -798,7 +841,9 @@ def test_grabbing(**kwargs):
     if T_world_obj is not None:
         print("Moving to pre-grasp position and initiating object grab...")
         T_world_obj_list = T_world_obj.tolist()
-        just_grab_the_object(T_world_obj, prompt=detection_item)
+        val = just_grab_the_object(T_world_obj, prompt=detection_item)
+        if val == 0:
+            return 0
         place_object()
         winsound.Beep(660, 500)  # Signal completion
     
@@ -990,6 +1035,9 @@ def just_grab_the_object(T_world_obj, **kwargs):
     print(f"Response from IIWA API: {response.text}")
     print("-"*50)
 
+    if response.text == "failed":
+        print("Failed to find the motion to the pregrabing position quiting...")
+        return 0
 
     print("Waiting after moving to pre-grasp...")
     
@@ -1011,7 +1059,6 @@ def just_grab_the_object(T_world_obj, **kwargs):
 
     time.sleep(2.5)
 
-    place_object()
     
 
 def place_object():
@@ -1141,7 +1188,7 @@ def drive_to_object(T_world_obj):
     y_offset_kmr_m = y_offset_kmr / 1000  # Convert mm to meters
     
     # Max distance per move (m)
-    max_distance = 1.3
+    max_distance = 1.49
     
     # Calculate total movement distance
     total_distance = np.sqrt(x_offset_kmr_m**2 + y_offset_kmr_m**2)
@@ -1601,7 +1648,7 @@ def visualize_transformations():
                7: "plug-in outlet expander",
                8: "tuna fish can"}
     
-    object_id = 5
+    object_id = 4
 
     base_path = "object_models"
     json_file_path = os.path.join(base_path, f"{objects[object_id]}/grab_poses/grab_poses.json")
