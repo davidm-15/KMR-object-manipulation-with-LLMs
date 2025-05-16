@@ -20,6 +20,7 @@ from datetime import datetime
 import pathlib
 
 
+
 logging.basicConfig(level=logging.INFO)
 
 # Run me with python -m communication.server glamm
@@ -31,6 +32,8 @@ MODEL_CLASSES = {
     "lisa": LISAHandler,
     "yolo": YOLOHandler,
 }
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def parse_megapose_output(output_str):
     # Look for the poses section which contains the important data
@@ -80,7 +83,6 @@ def parse_megapose_output(output_str):
     except Exception as e:
         return None, f"Error parsing pose matrix: {str(e)}"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def process_image(model_handler, image_file, prompt):
     """Process an image using the given model handler."""
@@ -116,7 +118,7 @@ def create_app(model_name):
     """Create Flask app with given model."""
     app = Flask(__name__)
     model_handler = MODEL_CLASSES[model_name](device)
-    qwen = QwenHandler(model_name="Qwen/Qwen2.5-VL-7B-Instruct")
+    qwen = QwenHandler(device, model_name="Qwen/Qwen2.5-VL-7B-Instruct")
 
     @app.route("/text_inference", methods=["POST"])
     def text_inference_route():
