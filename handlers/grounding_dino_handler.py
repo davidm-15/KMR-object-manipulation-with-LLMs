@@ -27,7 +27,7 @@ class GroundingDINOHandler:
             target_sizes=[image.size[::-1]]
         )
 
-        print("Results:", results)
+        # print("Results:", results)
         scores = results[0]["scores"].tolist()
         bounding_boxes = [[int(b[0]), int(b[1]), int(b[2]), int(b[3])] for b in results[0]["boxes"]]
 

@@ -36,7 +36,7 @@ class OwlViTHandler:
         
         # Convert to list of integer coordinates
         bounding_boxes = [[int(box[0]), int(box[1]), int(box[2]), int(box[3])] for box in boxes]
-        scores = [[float(score)] for score in scores]
+        scores = [float(score) for score in scores]
     
         
         return {"bounding_boxes": bounding_boxes, "scores": scores}

@@ -42,7 +42,7 @@ class YOLOHandler:
             logging.warning(f"No results returned by YOLO model for image: {image_file}")
             return {
                 "bounding_boxes": [],
-                "confidences": [],
+                "scores": [],
                 "class_ids": [],
                 "class_names": []
             }

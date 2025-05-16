@@ -10,6 +10,7 @@ from handlers.lisa_handler import LISAHandler
 from handlers.midas_handler import MiDaSHandler
 from handlers.yolo_handler import YOLOHandler
 from handlers.qwen_handler import QwenHandler
+from handlers.QwenDino_handler import QwenDino, QwenDino72
 from PIL import Image
 import subprocess
 import re
@@ -18,6 +19,7 @@ import numpy as np
 import pickle
 from datetime import datetime
 import pathlib
+from accelerate import Accelerator
 
 
 
@@ -28,9 +30,10 @@ logging.basicConfig(level=logging.INFO)
 # Run me with python -m communication.server yolo
 
 MODEL_CLASSES = {
-    "grounding_dino": GroundingDINOHandler,
+    "dino": GroundingDINOHandler,
     "lisa": LISAHandler,
     "yolo": YOLOHandler,
+    "qwendino": QwenDino
 }
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -207,7 +210,7 @@ def create_app(model_name):
             "pose": pose,
             "label": json_str["poses"][0]["label"]
         })
-    
+
 
     return app
 
@@ -218,3 +221,9 @@ if __name__ == "__main__":
 
     app = create_app(args.model)
     app.run(host="0.0.0.0", port=5000)
+
+    # accelerator = Accelerator()
+
+    # if accelerator.is_main_process:
+    #     app.run(host="0.0.0.0", port=5000)
+    
