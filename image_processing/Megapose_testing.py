@@ -16,11 +16,21 @@ from handlers.rexseek_handler import RexSeekHandler
 from handlers.grounding_dino_handler import GroundingDINOHandler
 from handlers.lisa_handler import LISAHandler
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from PIL import Image
 
 import logging
 from transformers import AutoConfig
+
+
+
+import torch.multiprocessing as mp
+
+# if __name__ == '__main__': # Important if this script can also be imported
+#     try:
+#         mp.set_start_method('spawn', force=True)
+#         print(f"Megapose_testing.py: Set multiprocessing start method to 'spawn'.")
+#     except RuntimeError:
+#         print(f"Megapose_testing.py: Multiprocessing start method already set or could not be set.")
 
 # run me with python -m image_processing.Megapose_testing
 
@@ -39,6 +49,7 @@ def main(**kwargs):
     prompt = kwargs.get("prompt", "foam brick")
     bbox = kwargs.get("bbox", None)
     DoVis = kwargs.get("DoVis", False)
+    device = kwargs.get("device", torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     megapose_path = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/ImageProcessing/megapose_objects"
     megapose_path = "/mnt/proj3/open-29-7/mira_ws/Projects/Diplomka/KMR-object-manipulation-with-LLMs/object_models"
@@ -123,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument('--prompt', type=str, default='foam brick', help='Text prompt for detection')
     parser.add_argument('--bbox', type=str, help='Bounding box coordinates in format "x1,y1,x2,y2"')
     parser.add_argument('--DoVis', default=False, type=bool, help='Enable visualization')
+    parser.add_argument('--device', type=str, default=None, help='Device to run the model on (e.g., "cuda:0" or "cpu")')
 
     args = parser.parse_args()
 

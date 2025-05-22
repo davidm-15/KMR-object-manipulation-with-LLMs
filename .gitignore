@@ -31,6 +31,10 @@ KMR_communication/*
 handlers/*
 !handlers/*.py
 
+!megapose_code/
+megapose_code/*
+!megapose_code/*.py
+
 !KMRcode/
 KMRcode/*
 !KMRcode/*.java
