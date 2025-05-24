@@ -113,26 +113,26 @@ def run_main():
 
 if __name__ == "__main__":
     # test_megapose()
-    # run_main()
+    run_main()
     
 
 
-    # Set up command-line argument parser
-    parser = argparse.ArgumentParser(description='Run object pose estimation')
-    parser.add_argument('--image_file', type=str, default='images/JustPickIt/img.png', help='Path to the image file')
-    parser.add_argument('--prompt', type=str, default='foam brick', help='Text prompt for detection')
-    parser.add_argument('--bbox', type=str, help='Bounding box coordinates in format "x1,y1,x2,y2"')
-    parser.add_argument('--DoVis', default=False, type=bool, help='Enable visualization')
+    # # Set up command-line argument parser
+    # parser = argparse.ArgumentParser(description='Run object pose estimation')
+    # parser.add_argument('--image_file', type=str, default='images/JustPickIt/img.png', help='Path to the image file')
+    # parser.add_argument('--prompt', type=str, default='foam brick', help='Text prompt for detection')
+    # parser.add_argument('--bbox', type=str, help='Bounding box coordinates in format "x1,y1,x2,y2"')
+    # parser.add_argument('--DoVis', default=False, type=bool, help='Enable visualization')
 
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
-    args.bbox = args.bbox.replace("[", "").replace("]", "")
-    args.bbox = [int(coord) for coord in args.bbox.split(",")]
+    # args.bbox = args.bbox.replace("[", "").replace("]", "")
+    # args.bbox = [int(coord) for coord in args.bbox.split(",")]
 
-    print("DoVis main Megapose_testing.py:", args.DoVis)
-    main(
-        image_file=args.image_file,
-        prompt=args.prompt,
-        bbox=args.bbox,
-        DoVis=args.DoVis
-    )
+    # print("DoVis main Megapose_testing.py:", args.DoVis)
+    # main(
+    #     image_file=args.image_file,
+    #     prompt=args.prompt,
+    #     bbox=args.bbox,
+    #     DoVis=args.DoVis
+    # )

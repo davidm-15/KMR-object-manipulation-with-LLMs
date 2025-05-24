@@ -4,7 +4,8 @@ import os
 from PIL import Image
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, AutoModelForZeroShotObjectDetection
 from qwen_vl_utils import process_vision_info
-
+import time
+import re
 
 
 class QwenDino:
@@ -32,6 +33,11 @@ class QwenDino:
         ).to(device)
         logging.info("Grounding DINO model loaded successfully")
 
+    def parse_response(self, response):
+        presence = int(re.search(r"<presence:\s*(\d)>", response).group(1))
+        description = re.search(r"<description:\s*(.*?)>", response).group(1)
+        return presence, description
+
     def infer(self, image_file, text_prompt):
         """
         Combined inference pipeline:
@@ -49,26 +55,35 @@ class QwenDino:
         logging.info(f"Looking for: {text_prompt}")
         
         # Step 1: Check if object is present using Qwen
-        qwen_prompt = f"This is an image from an industrial environment, I am looking for: {text_prompt}. Is it present in the image? Only answer with 1 if yes or 0 if not"
-        qwen_response = self.qwen_image_text_inference(image_file, qwen_prompt)
+        qwen_prompt = (
+            f"This is an image from an industrial environment. I am looking for: {text_prompt}. "
+            f"Is it present in the image? Reply in the following format:\n"
+            f"<presence: 1 or 0>\n"
+            f"<description: short description if present, describe only the object not the suroundings, otherwise 'none'>"
+        )
+        print(f"{qwen_prompt=}")
+
+        qwen_response = self.qwen_image_text_inference(image_file, qwen_prompt)["response"]
+     
+        print(f"{qwen_response=}")
         
-        # Extract binary response (0 or 1)
-        response_text = qwen_response["response"].strip().lower()
-        object_present = "1" in response_text.split()
+        presence, description = self.parse_response(qwen_response)
         
-        logging.info(f"Qwen detection result: {'Present' if object_present else 'Not present'}")
-        
+
+        logging.info(f"Qwen detection result: {'Present' if presence else 'Not present'}")
+        logging.info(f"Qwen object description: {description}")
+
         result = {
-            "object_present": object_present,
-            "qwen_response": response_text,
+            "object_present": presence,
+            "qwen_response": description,
             "bounding_boxes": [],
             "scores": []
         }
         
         # Step 2: If object is present, use Grounding DINO to localize it
-        if object_present:
+        if presence:
             logging.info(f"Localizing object with Grounding DINO")
-            dino_results = self.dino_object_detection(image_file, text_prompt)
+            dino_results = self.dino_object_detection(image_file, description)
             
             result["bounding_boxes"] = dino_results["bounding_boxes"]
             result["scores"] = dino_results["scores"]
@@ -166,6 +181,119 @@ class QwenDino:
         bounding_boxes = [[int(b[0]), int(b[1]), int(b[2]), int(b[3])] for b in results[0]["boxes"]]
 
         return {"bounding_boxes": bounding_boxes, "scores": scores}
+
+    def text_inference(self, text_input, max_new_tokens=128):
+        """
+        Perform inference on text-only input.
+        
+        Args:
+            text_input (str): The text prompt
+            max_new_tokens (int): Maximum number of tokens to generate
+            
+        Returns:
+            str: The generated text response
+        """
+        start_time = time.time()
+        
+        messages = [
+            {"role": "user", "content": [{"type": "text", "text": text_input}]}
+        ]
+        
+        text = self.qwen_processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        
+        inputs = self.qwen_processor(
+            text=[text],
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to("cuda")
+        
+        generated_ids = self.qwen_model.generate(**inputs, max_new_tokens=max_new_tokens)
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        output_text = self.qwen_processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        
+        return {
+            "response": output_text[0],
+            "time": elapsed_time
+        }
+
+
+    def image_text_inference(self, image_file, text_prompt, max_new_tokens=128):
+        """
+        Perform inference on image and text input.
+        
+        Args:
+            image_path (str): Path to the input image
+            text_prompt (str): The text prompt to accompany the image
+            max_new_tokens (int): Maximum number of tokens to generate
+            
+        Returns:
+            dict: Contains the response text and processing time
+        """
+        start_time = time.time()
+
+        image = Image.open(image_file).convert("RGB")
+        image_path = os.path.join("/tmp", os.path.basename("tmp_image.jpg"))
+        image.save(image_path)
+
+        
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": image_path,
+                    },
+                    {"type": "text", "text": text_prompt},
+                ],
+            }
+        ]
+
+        text = self.qwen_processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = self.qwen_processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
+        inputs = inputs.to("cuda")
+
+        generated_ids = self.qwen_model.generate(**inputs, max_new_tokens=max_new_tokens)
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        output_text = self.qwen_processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        # Clean up the temporary image file
+        if os.path.exists(image_path):
+            os.remove(image_path)
+        else:
+            print(f"The file {image_path} does not exist")
+
+        
+        return {
+            "response": output_text[0],
+            "time": elapsed_time
+        }
 
 
 class QwenDino32(QwenDino):
