@@ -95,7 +95,7 @@ def process_image_and_estimate_pose(image: np.ndarray, item_name: str, T_world_c
     
     pose_result_dict = send_for_pose_estimation(
         image_bytes,
-        bounding_boxes,
+        bounding_boxes[0],
         item_name
     )
 
@@ -518,8 +518,8 @@ def go_around_positions(camera_handler: CameraHandler, **kwargs):
 
     T_world_obj_list = None 
     for i, pose in enumerate(Poses):
-        if i < 8:
-            continue
+        # if i < 8:
+        #     continue
         # Make sure keys match API requirements ('A1'...'A7')
         print(f"Moving to pose {i+1}/{len(Poses)}: { {k: round(v, 3) for k, v in pose.items() if k != 'speed'} }")
         try:

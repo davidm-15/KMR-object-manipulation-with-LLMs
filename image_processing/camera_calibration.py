@@ -60,102 +60,161 @@ def intrinsic_calibration(images_path: str, **kwargs: dict) -> dict:
     Calibrates the camera using a set of chessboard images.
 
     Args:
-        images_path (str): Path to the folder containing the chessboard images. Images should be in PNG format.
+        images_path (str): Path to the folder containing the chessboard images.
+                           Images should be in PNG format (or other formats OpenCV can read).
+        **kwargs (dict): Optional keyword arguments:
+            display_images (bool): If True, displays images with detected corners. Default: False.
+            output_path (str): Path to save the calibration data. Default: same as images_path.
+            chessboard_size (tuple): (columns, rows) of internal corners. Default: (5, 8).
+                                     Example: A 6x9 chessboard has (5,8) internal corners.
+            image_format (str): Image file extension (e.g., "png", "jpg"). Default: "png".
 
     Raises:
         RuntimeError: If no chessboard patterns are detected in the images or calibration fails.
+        FileNotFoundError: If images_path does not exist or no images are found.
 
     Returns:
-        dict: Camera calibration data containing the camera matrix, distortion coefficients, and image resolution.
+        dict: Camera calibration data containing the camera matrix, distortion coefficients,
+              image resolution, and mean reprojection error.
 
     Notes:
-        This function creates a file named 'camera_data.json' in the same folder as input images. 
-        The file contains the camera calibration matrix, distortion coefficients, and image resolution.
+        This function creates a file named 'camera_intrinsics.json' in the output_path.
+        The file contains the camera calibration matrix, distortion coefficients,
+        image resolution, and mean reprojection error.
     """
     display_images = kwargs.get("display_images", False)
     output_path = kwargs.get("output_path", images_path)
-    chessboard_size = kwargs.get("chessboard_size", (5, 8))
+    chessboard_size = kwargs.get("chessboard_size", (5, 8)) # (cols, rows) of internal corners
+    image_format = kwargs.get("image_format", "png")
+
+    if not os.path.exists(images_path):
+        raise FileNotFoundError(f"Images path '{images_path}' does not exist.")
 
     if not os.path.exists(output_path):
         os.makedirs(output_path)
+        print(f"Created output directory: {output_path}")
 
-    images = glob.glob(os.path.join(images_path, "*.png"))
+    images = glob.glob(os.path.join(images_path, f"*.{image_format}"))
 
     if not images:
-        raise RuntimeError(f"No PNG images found in '{images_path}'.")
+        raise FileNotFoundError(f"No '{image_format}' images found in '{images_path}'.")
 
-    xssize, yssize = chessboard_size
+    cols_corners, rows_corners = chessboard_size
+    # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-    objp = np.zeros((xssize * yssize, 3), np.float32)
-    objp[:, :2] = np.mgrid[0:xssize, 0:yssize].T.reshape(-1, 2)
 
-    objpoints, imgpoints = [], []
-    found = 0
-    gray = None
+    # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(rows-1,cols-1,0)
+    # These are the 3D coordinates of the chessboard corners in its own coordinate system.
+    # The Z-coordinate is 0 because we assume the chessboard is planar.
+    objp = np.zeros((cols_corners * rows_corners, 3), np.float32)
+    objp[:, :2] = np.mgrid[0:cols_corners, 0:rows_corners].T.reshape(-1, 2)
 
-    for fname in images:
+    # Arrays to store object points and image points from all the images.
+    objpoints = []  # 3d point in real world space
+    imgpoints = []  # 2d points in image plane.
+    img_shape = None # To store image shape for calibration
+
+    print(f"Processing {len(images)} images for calibration...")
+    found_count = 0
+    for i, fname in enumerate(images):
         img = cv2.imread(fname)
         if img is None:
             print(f"Warning: Could not read image {fname}. Skipping.")
             continue
 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        ret, corners = cv2.findChessboardCorners(gray, (xssize, yssize), None)
+        if img_shape is None:
+            img_shape = img.shape[:2] # (height, width)
+        elif img_shape != img.shape[:2]:
+            print(f"Warning: Image {fname} has a different resolution {img.shape[:2]} "
+                  f"than the first image {img_shape}. Skipping. "
+                  "All images for calibration should have the same resolution.")
+            continue
 
-        if ret and corners is not None:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Find the chess board corners
+        ret, corners = cv2.findChessboardCorners(gray, (cols_corners, rows_corners), None)
+
+        # If found, add object points, image points (after refining them)
+        if ret:
             objpoints.append(objp)
             corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
             imgpoints.append(corners2)
-            cv2.drawChessboardCorners(img, (xssize, yssize), corners2, ret)
-            found += 1
-            if display_images:
-                cv2.imshow('Chessboard Detection', cv2.resize(img, (640, 480)))
-                cv2.waitKey(100)
+            found_count += 1
 
-    print(f"Number of images used for calibration: {found}")
+            if display_images:
+                cv2.drawChessboardCorners(img, (cols_corners, rows_corners), corners2, ret)
+                # Resize for display if too large
+                h, w = img.shape[:2]
+                scale = min(640/w, 480/h, 1.0) # Ensure it fits, don't upscale
+                display_img = cv2.resize(img, (int(w*scale), int(h*scale)))
+                cv2.imshow(f'Chessboard Detection - {os.path.basename(fname)}', display_img)
+                cv2.waitKey(100) # ms delay
+        else:
+            print(f"Chessboard not found in {os.path.basename(fname)}")
 
     if display_images:
         cv2.destroyAllWindows()
 
-    if found == 0:
-        raise RuntimeError("No chessboard patterns detected. Check images or pattern size. Are the images in PNG format?")
+    print(f"\nNumber of images where chessboard was successfully detected: {found_count} / {len(images)}")
 
-    ret, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+    if found_count == 0:
+        raise RuntimeError(
+            "No chessboard patterns detected in any image. Check images, chessboard_size, "
+            f"or image_format ('{image_format}'). Expected {chessboard_size} internal corners."
+        )
+    if found_count < 5: # OpenCV recommends at least 10-20 images, but 5 is a bare minimum
+        print(f"Warning: Only {found_count} images with detected patterns. "
+              "Calibration quality might be low. Consider adding more diverse images.")
 
+    # gray.shape[::-1] gives (width, height)
+    # img_shape is (height, width), so img_shape[::-1] is (width, height)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, img_shape[::-1], None, None)
+
+    if not ret:
+        raise RuntimeError("Camera calibration failed. Ensure chessboard images are suitable and diverse.")
+
+    # --- Reprojection Error Calculation ---
     total_error = 0
     for i in range(len(objpoints)):
-        imgpoints2, _ = cv2.projectPoints(objpoints[i], np.zeros((3,1)), np.zeros((3,1)), mtx, dist)
+        # Project the 3D object points to 2D image points using the
+        # calibrated camera matrix (mtx), distortion coefficients (dist),
+        # and the per-image rotation (rvecs[i]) and translation (tvecs[i]) vectors.
+        imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
+
+        # Calculate the L2 norm (Euclidean distance) between the reprojected points
+        # and the originally detected image points.
+        # This error is then averaged over all points in the current image.
         error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
         total_error += error
 
-    # mean_error = total_error / len(objpoints)
-    # print(f"\nMean Reprojection Error: {mean_error:.4f}")
-    # camera_data["reprojection_error"] = mean_error
-
-
-
-    if not ret:
-        raise RuntimeError("Camera calibration failed. Ensure chessboard images are suitable.")
+    mean_reprojection_error = total_error / len(objpoints)
+    # A good calibration typically has a mean reprojection error less than 1.0 pixels.
+    # Values between 0.1 and 0.5 are common for high-quality calibrations.
 
     camera_data = {
         "K": mtx.tolist(),
-        "resolution": [gray.shape[0], gray.shape[1]],
-        "dist_coeff": dist.tolist()
+        "resolution": [int(img_shape[0]), int(img_shape[1])], # height, width
+        "dist_coeff": dist.tolist(),
+        "mean_reprojection_error_pixels": float(f"{mean_reprojection_error:.4f}")
     }
-    print("Camera Matrix (K):")
-    print(mtx)
-    print("\nDistortion Coefficients:")
-    print(dist)
-    print("\nImage Resolution:")
-    print(gray.shape[::-1])
+
+    print("\n--- Calibration Results ---")
+    print(f"Camera Matrix (K):\n{mtx}")
+    print(f"\nDistortion Coefficients (k1, k2, p1, p2, k3):\n{dist}")
+    print(f"\nImage Resolution (height, width): {camera_data['resolution']}")
+    print(f"\nMean Reprojection Error: {mean_reprojection_error:.4f} pixels")
+    if mean_reprojection_error > 1.0:
+        print("Warning: Mean reprojection error is high (> 1.0 pixels). "
+              "Calibration might be suboptimal. Consider re-capturing images with more variation "
+              "in chessboard pose and ensuring good lighting and sharp focus.")
 
     out_file = os.path.join(output_path, "camera_intrinsics.json")
     with open(out_file, "w") as json_file:
         json.dump(camera_data, json_file, indent=4)
-        print(f"Camera calibration data saved to '{out_file}'.")
+    print(f"\nCamera calibration data saved to '{out_file}'.")
 
     return camera_data
-
 
 def capture_images(output_folder: str) -> None:
     """
@@ -208,84 +267,247 @@ def get_robot_transformation(image_path: str) -> np.array:
     
     raise ValueError(f"No transformation found for image {image_path}")
 
-def extrinsic_calibration(file_path: str, **kwargs) -> None:
+def extrinsic_calibration(file_path: str, **kwargs: dict) -> dict:
     """
     Calibrates the camera extrinsics using ArUco markers and robot pose data.
+    Includes reprojection error calculation.
 
     Args:
         file_path (str): Path to the folder containing ArUco marker images and robot pose data.
-        **kwargs: Additional keyword arguments.
+        **kwargs: Additional keyword arguments:
+            intrinsic_path (str): Path to camera_intrinsics.json.
+                                  Default: "image_processing/calibration_data/camera_intrinsics.json"
+            output_path (str): Path to save camera_extrinsic.json. Default: same as file_path.
+            marker_length (float): Side length of the ArUco marker (in same units as robot poses
+                                   and tvecs from estimatePoseSingleMarkers). Default: 120.0.
+            aruco_dict_name (int): OpenCV ArUco dictionary ID (e.g., aruco.DICT_6X6_1000).
+                                   Default: aruco.DICT_6X6_1000.
+            hand_eye_method (int): OpenCV hand-eye calibration method.
+                                   Default: cv2.CALIB_HAND_EYE_TSAI.
+            image_format (str): Image file extension (e.g., "png", "jpg"). Default: "png".
 
     Raises:
-        RuntimeError: If not enough valid marker detections are found for calibration.  
+        RuntimeError: If not enough valid marker detections are found for calibration or if calibration fails.
+        FileNotFoundError: If critical files (intrinsics, images) are missing.
 
-
+    Returns:
+        dict: Extrinsic calibration data including transformation matrix and reprojection error.
     """
 
-    intrinsic_path = kwargs.get("intrinsic_path", "image_processing\calibration_data\camera_intrinsics.json")
+    intrinsic_path = kwargs.get("intrinsic_path", os.path.join("image_processing", "calibration_data", "camera_intrinsics.json"))
     output_path = kwargs.get("output_path", file_path)
+    # Marker length used for estimatePoseSingleMarkers AND for defining 3D object points for reprojection
+    marker_length_val = float(kwargs.get("marker_length", 120.0))
+    aruco_dict_id = kwargs.get("aruco_dict_name", aruco.DICT_6X6_1000)
+    hand_eye_method = kwargs.get("hand_eye_method", cv2.CALIB_HAND_EYE_TSAI)
+    image_format = kwargs.get("image_format", "png")
+
+
+    if not os.path.exists(intrinsic_path):
+        raise FileNotFoundError(f"Intrinsic calibration file not found: {intrinsic_path}")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Image data path not found: {file_path}")
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
 
     with open(intrinsic_path, "r") as json_file:
         camera_data = json.load(json_file)
 
-    camera_matrix = np.array(camera_data["K"])
-    dist_coeffs = np.array(camera_data["dist_coeff"])
+    camera_matrix = np.array(camera_data["K"], dtype=np.float64)
+    dist_coeffs = np.array(camera_data["dist_coeff"], dtype=np.float64)
+    if dist_coeffs.ndim == 1: # Ensure shape (1,N) or (N,1) for OpenCV
+        dist_coeffs = dist_coeffs.reshape(1, -1)
+
+    aruco_images = sorted(glob.glob(os.path.join(file_path, f"*.{image_format}")))
+    if not aruco_images:
+        raise FileNotFoundError(f"No '{image_format}' images found in '{file_path}'.")
+
+    aruco_dict = aruco.getPredefinedDictionary(aruco_dict_id)
+    if hasattr(aruco, 'DetectorParameters_create'): # OpenCV 3.x, 4.0-4.6
+       parameters = aruco.DetectorParameters_create()
+    else: # OpenCV 4.7+
+       parameters = aruco.DetectorParameters()
     
-    aruco_images = glob.glob(file_path + "/*.png")
-    aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_6X6_1000)
-    parameters = aruco.DetectorParameters()
+    # For cv2.calibrateHandEye
+    A_matrices_list = [] # List of T_base2ee (robot pose)
+    B_matrices_list = [] # List of T_marker2cam (marker pose in camera)
     
-    A_list, B_list = [], []
-    
+    # For reprojection error
+    original_detected_corners_list = [] # List of detected 2D corners from images
+
+    print(f"Processing {len(aruco_images)} images for hand-eye calibration...")
     for image_path in aruco_images:
         image = cv2.imread(image_path)
+        if image is None:
+            print(f"Warning: Could not read image {image_path}. Skipping.")
+            continue
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
+        
+        # corners: list of (1, 4, 2) arrays for each detected marker
+        # ids: array of marker IDs
+        corners_all_markers, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
   
-        if ids is not None:
-            rvecs, tvecs, _ = aruco.estimatePoseSingleMarkers(corners, 120, camera_matrix, dist_coeffs)
+        if ids is not None and len(ids) > 0:
+            # Use the first detected marker. If specific marker ID is needed, filter here.
+            # We need its specific corners array which is corners_all_markers[0]
+            current_marker_corners = corners_all_markers[0] # Shape (1,4,2)
+
+            # rvecs, tvecs are arrays of vectors, one for each marker
+            rvecs, tvecs, _ = aruco.estimatePoseSingleMarkers(current_marker_corners, marker_length_val, camera_matrix, dist_coeffs)
 
             try:
-                A_i = get_robot_transformation(image_path)
-                B_i = np.eye(4)
-                B_i[:3, :3] = cv2.Rodrigues(rvecs[0])[0]
-                B_i[:3, 3] = tvecs[0][0]
-                A_list.append(A_i)
-                B_list.append(B_i)
+                A_i = get_robot_transformation(image_path) # T_base2ee (robot pose)
+                print("FFF"*15)
+                print(f"{A_i=}")
+                
+                B_i = np.eye(4) # T_marker2cam (marker pose in camera frame)
+                B_i[:3, :3], _ = cv2.Rodrigues(rvecs[0]) # rvecs[0] is for the first (and only, in this case) marker
+                B_i[:3, 3] = tvecs[0].flatten()
+                
+                A_matrices_list.append(A_i)
+                B_matrices_list.append(B_i)
+                original_detected_corners_list.append(current_marker_corners) # Store (1,4,2)
 
             except ValueError as e:
-                print(e)
+                print(f"Skipping {os.path.basename(image_path)} due to error: {e}")
                 continue
+        else:
+            print(f"No ArUco markers detected in {os.path.basename(image_path)}")
     
-    print(f"Number of valid marker detections: {len(A_list)}")
+    num_valid_poses = len(A_matrices_list)
+    print(f"\nNumber of valid image-pose pairs for calibration: {num_valid_poses}")
 
-    if not A_list or not B_list:
-        raise RuntimeError("Not enough valid marker detections for calibration.")
+    if num_valid_poses < 3: # Hand-eye generally needs at least 3, preferably more diverse poses
+        raise RuntimeError(f"Not enough valid marker/robot pose pairs ({num_valid_poses}) for calibration. Need at least 3.")
     
-    A_rotations = [A[:3, :3] for A in A_list]
-    A_translations = [A[:3, 3] for A in A_list]
-    B_rotations = [B[:3, :3] for B in B_list]
-    B_translations = [B[:3, 3] for B in B_list]
+    # Prepare inputs for calibrateHandEye
+    # R_gripper2base, t_gripper2base (from robot poses)
+    # R_target2cam, t_target2cam (from marker detections)
+    # The interpretation of "gripper" and "target" depends on the specific hand-eye setup (eye-in-hand vs eye-to-hand)
+    # and the method used. Assuming eye-in-hand, T_cam2ee is sought.
+    # User's original code implies A_list are T_base2ee, B_list are T_marker2cam.
+    # The call calibrateHandEye(A_rotations, A_translations, B_rotations, B_translations)
+    # with Tsai typically solves T_base2ee_i * X = Y * T_marker2cam_i for X=T_ee2cam (if Y is T_base2marker)
+    # or a similar formulation resulting in T_cam2ee.
     
-    R_cam2ee, t_cam2ee = cv2.calibrateHandEye(A_rotations, A_translations, B_rotations, B_translations, method=cv2.CALIB_HAND_EYE_TSAI)
-    T_cam2ee = np.eye(4)
+    A_rotations = [A[:3, :3] for A in A_matrices_list]
+    A_translations = [A[:3, 3].reshape(3,1) for A in A_matrices_list] # Ensure column vector
+    B_rotations = [B[:3, :3] for B in B_matrices_list]
+    B_translations = [B[:3, 3].reshape(3,1) for B in B_matrices_list] # Ensure column vector
+    
+    # R_cam2ee, t_cam2ee should be T_camera_to_endeffector (X in our notation)
+    R_cam2ee, t_cam2ee_col_vec = cv2.calibrateHandEye(
+        A_rotations, A_translations, 
+        B_rotations, B_translations, 
+        method=hand_eye_method
+    )
+    
+    T_cam2ee = np.eye(4) # This is X_calib = T_camera_to_endeffector
     T_cam2ee[:3, :3] = R_cam2ee
-    T_cam2ee[:3, 3] = t_cam2ee.flatten()
+    T_cam2ee[:3, 3] = t_cam2ee_col_vec.flatten()
     
-    print("\n Rotation matrix:\n", R_cam2ee)
-    print("\n Translation vector:\n", t_cam2ee)
-    print("\n Transformation matrix:\n", T_cam2ee)
-    print("\n")
+    print("\n--- Hand-Eye Calibration Result (T_camera_to_endeffector) ---")
+    print(f"Rotation matrix (R_cam2ee):\n{R_cam2ee}")
+    print(f"\nTranslation vector (t_cam2ee) [units consistent with marker_length & robot poses]:\n{t_cam2ee_col_vec.flatten()}")
+    print(f"\nTransformation matrix (T_cam2ee):\n{T_cam2ee}")
 
+    # --- Reprojection Error Calculation ---
+    # Y_static = T_base2marker. Should be constant.
+    # Y_i = A_i * X_calib * inv(B_i)
+    Y_candidates_T_base2marker = []
+    for i in range(num_valid_poses):
+        A_i = A_matrices_list[i]
+        B_i = B_matrices_list[i]
+        try:
+            inv_B_i = np.linalg.inv(B_i)
+            Y_i = A_i @ T_cam2ee @ inv_B_i
+            Y_candidates_T_base2marker.append(Y_i)
+        except np.linalg.LinAlgError:
+            print(f"Warning: Singular matrix B_i for pose {i} during Y_static estimation. Skipping this Y_i.")
+            continue
+            
+    mean_reprojection_error_pixels = -1.0 # Default / error value
+    
+    if not Y_candidates_T_base2marker:
+        print("\nWarning: Could not estimate any T_base2marker (Y_static) candidates. Reprojection error cannot be calculated.")
+    else:
+        # Averaging Y_static (T_base2marker_avg)
+        # Simple averaging: average translations, use first valid rotation for simplicity.
+        # More robust rotation averaging is complex and beyond "nothing else".
+        Y_translations = [Y[:3,3] for Y in Y_candidates_T_base2marker]
+        avg_Y_translation = np.mean(np.array(Y_translations), axis=0)
+        avg_Y_rotation = Y_candidates_T_base2marker[0][:3,:3] # Use rotation from the first candidate
+        
+        T_base2marker_avg = np.eye(4)
+        T_base2marker_avg[:3,:3] = avg_Y_rotation
+        T_base2marker_avg[:3,3] = avg_Y_translation
+        print(f"\nEstimated average static T_base2marker (Y_avg):\n{T_base2marker_avg}")
 
+        try:
+            inv_T_base2marker_avg = np.linalg.inv(T_base2marker_avg)
+        except np.linalg.LinAlgError:
+            print("Error: Average T_base2marker_avg is singular. Cannot compute reprojection error.")
+            inv_T_base2marker_avg = None
+
+        if inv_T_base2marker_avg is not None:
+            total_error_sum_pixels = 0
+            total_points_projected = 0
+
+            # Define 3D object points for the marker (origin at center, Z=0 plane)
+            half_L = marker_length_val / 2.0
+            obj_points_marker_3d = np.array([
+                [-half_L,  half_L, 0.0], [ half_L,  half_L, 0.0],
+                [ half_L, -half_L, 0.0], [-half_L, -half_L, 0.0]
+            ], dtype=np.float32) # Shape (4,3)
+
+            for i in range(num_valid_poses):
+                A_i = A_matrices_list[i] # T_base2ee_i
+                detected_corners_2d = original_detected_corners_list[i][0].reshape(-1, 2) # Shape (4,2)
+
+                # Calculate B_reprojected_i = inv(Y_avg) * A_i * X_calib
+                # This is the expected T_marker2cam_i based on calibration
+                try:
+                    T_marker2cam_reprojected = inv_T_base2marker_avg @ A_i @ T_cam2ee
+                except np.linalg.LinAlgError: # Should not happen if T_cam2ee, A_i, inv_Y are fine
+                    print(f"Warning: LinAlgError during B_reprojected calculation for pose {i}. Skipping.")
+                    continue
+
+                R_m2c_reco = T_marker2cam_reprojected[:3,:3]
+                t_m2c_reco = T_marker2cam_reprojected[:3,3]
+                rvec_m2c_reco, _ = cv2.Rodrigues(R_m2c_reco) # Convert rotation matrix to rvec
+
+                # Project the 3D marker points to 2D image plane
+                imgpoints_reprojected, _ = cv2.projectPoints(obj_points_marker_3d,
+                                                             rvec_m2c_reco, t_m2c_reco,
+                                                             camera_matrix, dist_coeffs)
+                
+                error_per_marker = cv2.norm(detected_corners_2d, imgpoints_reprojected.reshape(-1,2), cv2.NORM_L2)
+                total_error_sum_pixels += error_per_marker
+                total_points_projected += len(obj_points_marker_3d) # typically 4 points per marker
+
+            if total_points_projected > 0:
+                mean_reprojection_error_pixels = total_error_sum_pixels / total_points_projected
+                print(f"\nMean Reprojection Error: {mean_reprojection_error_pixels:.4f} pixels per point")
+            else:
+                print("\nWarning: No points were projected for error calculation.")
+    
     extrinsic_data = {
-        "rotation_matrix": R_cam2ee.tolist(),
-        "translation_vector": t_cam2ee.tolist(),
-        "transformation_matrix": T_cam2ee.tolist()
+        "rotation_matrix_cam2ee": R_cam2ee.tolist(),
+        "translation_vector_cam2ee": t_cam2ee_col_vec.flatten().tolist(),
+        "transformation_matrix_cam2ee": T_cam2ee.tolist(),
+        "mean_reprojection_error_pixels": float(f"{mean_reprojection_error_pixels:.4f}") if mean_reprojection_error_pixels >=0 else None,
+        "num_poses_used_for_calibration": num_valid_poses,
+        "num_Y_candidates_for_reprojection": len(Y_candidates_T_base2marker),
+        "marker_length_used": marker_length_val,
+        "hand_eye_method_used": hand_eye_method
     }
     
-    with open(os.path.join(output_path, "camera_extrinsic.json"), "w") as f:
-        json.dump(extrinsic_data, f)
+    output_json_path = os.path.join(output_path, "camera_extrinsic.json")
+    with open(output_json_path, "w") as f:
+        json.dump(extrinsic_data, f, indent=4)
+    print(f"\nExtrinsic hand-eye calibration data saved to '{output_json_path}'.")
+
+    return extrinsic_data
 
 
 

@@ -14,7 +14,6 @@ PROMPT = "cracker box"
 # PROMPT = "mustard bottle"
 
 # Run me with python -m communication.client
-
 def send_image_to_server(image_data, prompt):
     """ Sends image to server and returns bounding boxes """
     try:
