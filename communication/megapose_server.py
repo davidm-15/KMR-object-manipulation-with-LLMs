@@ -23,7 +23,6 @@ MEGAPOSE_TIMEOUT_SECONDS = 300 # 5 minutes
 
 # GPU for Megapose subprocess on this node.
 # This server itself might not use GPU, but the subprocess will.
-MEGAPOSE_SUBPROCESS_CUDA_DEVICE = "0" # e.g., use physical GPU 0 on this node
 
 @app.route('/estimate_pose_subprocess', methods=['POST'])
 def estimate_pose_subprocess_route():
